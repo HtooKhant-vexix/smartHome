@@ -27,52 +27,51 @@ const { width } = Dimensions.get('window');
 
 interface DeviceCardProps {
   title: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  isOn: boolean;
-  onToggle: () => void;
-  onPress?: () => void;
+  icon: React.ElementType;
+  deviceCount: number;
+  activeCount: number;
 }
 
-function DeviceCard({
+const DeviceCard = ({
   title,
-  subtitle,
-  icon,
-  isOn,
-  onToggle,
-  onPress,
-}: DeviceCardProps) {
+  icon: Icon,
+  deviceCount,
+  activeCount,
+}: DeviceCardProps) => {
   const router = useRouter();
-  const deviceId = title.toLowerCase().replace(/\s+/g, '-');
+  const deviceType = title.toLowerCase().replace(/\s+/g, '-');
 
   return (
     <TouchableOpacity
-      style={[styles.deviceCard, { opacity: isOn ? 1 : 0.7 }]}
-      onPress={() => router.push(`/device/${deviceId}`)}
+      style={styles.deviceCard}
+      onPress={() => router.push(`/device/list?type=${deviceType}`)}
       activeOpacity={0.8}
     >
-      <View style={styles.deviceHeader}>
-        <View style={styles.deviceIcon}>{icon}</View>
-        <TouchableOpacity
-          style={[
-            styles.toggle,
-            { backgroundColor: isOn ? '#2563eb' : '#374151' },
-          ]}
-          onPress={onToggle}
-        >
-          <View
-            style={[
-              styles.toggleKnob,
-              { transform: [{ translateX: isOn ? 16 : 2 }] },
-            ]}
-          />
-        </TouchableOpacity>
+      <View style={styles.deviceCardHeader}>
+        <View style={styles.deviceIconContainer}>
+          <Icon size={24} color="white" />
+        </View>
+        <View style={styles.deviceStatusContainer}>
+          <View style={styles.deviceStatus}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: activeCount > 0 ? '#22c55e' : '#ef4444' },
+              ]}
+            />
+            <Text style={styles.deviceStatusText}>
+              {activeCount} / {deviceCount}
+            </Text>
+          </View>
+        </View>
       </View>
       <Text style={styles.deviceTitle}>{title}</Text>
-      <Text style={styles.deviceSubtitle}>{subtitle}</Text>
+      <Text style={styles.deviceSubtitle}>
+        {deviceCount} {deviceCount === 1 ? 'device' : 'devices'}
+      </Text>
     </TouchableOpacity>
   );
-}
+};
 
 interface StatCardProps {
   label: string;
@@ -167,45 +166,27 @@ export default function HomeScreen() {
         <View style={styles.deviceGrid}>
           <DeviceCard
             title="Smart Light"
-            subtitle="4 Lamps"
-            icon={
-              <Lightbulb
-                size={24}
-                color={devices.smartLight ? '#2563eb' : '#6b7280'}
-              />
-            }
-            isOn={devices.smartLight}
-            onToggle={() => toggleDevice('smartLight')}
+            icon={Lightbulb}
+            deviceCount={4}
+            activeCount={2}
           />
           <DeviceCard
             title="Smart AC"
-            subtitle="2 Device"
-            icon={
-              <Wind size={24} color={devices.smartAC ? '#2563eb' : '#6b7280'} />
-            }
-            isOn={devices.smartAC}
-            onToggle={() => toggleDevice('smartAC')}
+            icon={Wind}
+            deviceCount={2}
+            activeCount={1}
           />
           <DeviceCard
             title="Smart TV"
-            subtitle="1 Device"
-            icon={
-              <Tv size={24} color={devices.smartTV ? '#2563eb' : '#6b7280'} />
-            }
-            isOn={devices.smartTV}
-            onToggle={() => toggleDevice('smartTV')}
+            icon={Tv}
+            deviceCount={2}
+            activeCount={1}
           />
           <DeviceCard
             title="Air Purifier"
-            subtitle="1 Device"
-            icon={
-              <Monitor
-                size={24}
-                color={devices.airPurifier ? '#2563eb' : '#6b7280'}
-              />
-            }
-            isOn={devices.airPurifier}
-            onToggle={() => toggleDevice('airPurifier')}
+            icon={Monitor}
+            deviceCount={2}
+            activeCount={1}
           />
         </View>
 
@@ -356,16 +337,16 @@ const styles = StyleSheet.create({
     width: (width - 52) / 2,
     backgroundColor: '#1e293b',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     marginBottom: 16,
   },
-  deviceHeader: {
+  deviceCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  deviceIcon: {
+  deviceIconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -373,19 +354,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  toggle: {
-    width: 38,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    position: 'relative',
+  deviceStatusContainer: {
+    alignItems: 'flex-end',
   },
-  toggleKnob: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'white',
-    position: 'absolute',
+  deviceStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#334155',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  deviceStatusText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
   },
   deviceTitle: {
     fontSize: 18,
