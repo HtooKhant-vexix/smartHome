@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ const deviceNames = {
 };
 
 // Mock data for devices
-const deviceData = {
+const initialDeviceData = {
   'smart-light': [
     { id: '1', name: 'Living Room Lamp', isOn: true },
     { id: '2', name: 'Kitchen Lamp', isOn: false },
@@ -51,49 +51,66 @@ export default function DeviceListScreen() {
   const router = useRouter();
   const Icon = deviceIcons[type as keyof typeof deviceIcons];
   const deviceName = deviceNames[type as keyof typeof deviceNames];
-  const devices = deviceData[type as keyof typeof deviceData] || [];
+
+  const [devices, setDevices] = useState(
+    initialDeviceData[type as keyof typeof initialDeviceData] || []
+  );
+
+  const toggleDevice = (deviceId: string) => {
+    setDevices((prevDevices) =>
+      prevDevices.map((device) =>
+        device.id === deviceId ? { ...device, isOn: !device.isOn } : device
+      )
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ChevronLeft size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.title}>{deviceName}</Text>
-        <View style={styles.backButton} />
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {devices.map((device) => (
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
           <TouchableOpacity
-            key={device.id}
-            style={styles.deviceCard}
-            onPress={() => router.push(`/device/${type}/${device.id}`)}
+            style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <View style={styles.deviceInfo}>
-              <View style={styles.iconContainer}>
-                <Icon size={24} color="white" />
-              </View>
-              <View>
-                <Text style={styles.deviceName}>{device.name}</Text>
-                <Text style={styles.deviceStatus}>
-                  {device.isOn ? 'On' : 'Off'}
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={device.isOn}
-              onValueChange={() => {}}
-              trackColor={{ false: '#374151', true: '#2563eb' }}
-              thumbColor="white"
-            />
+            <ChevronLeft size={24} color="white" />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
+          <Text style={styles.title}>{deviceName}</Text>
+          <View style={styles.backButton} />
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {devices.map((device) => (
+            <TouchableOpacity
+              key={device.id}
+              style={styles.deviceCard}
+              onPress={() => router.push(`/device/${type}/${device.id}`)}
+            >
+              <View style={styles.deviceInfo}>
+                <View style={styles.iconContainer}>
+                  <Icon size={24} color="white" />
+                </View>
+                <View>
+                  <Text style={styles.deviceName}>{device.name}</Text>
+                  <Text style={styles.deviceStatus}>
+                    {device.isOn ? 'On' : 'Off'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={device.isOn}
+                onValueChange={() => toggleDevice(device.id)}
+                trackColor={{ false: '#374151', true: '#2563eb' }}
+                thumbColor="white"
+              />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -101,6 +118,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',

@@ -261,65 +261,76 @@ export default function DeviceDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ChevronLeft size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.title}>{device.name}</Text>
-        <View style={styles.backButton} />
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.deviceStatus}>
-          <View style={styles.iconContainer}>
-            <Icon size={32} color="white" />
-          </View>
-          <Text style={styles.statusText}>
-            {isOn ? 'Device is On' : 'Device is Off'}
-          </Text>
-        </View>
-
-        <View style={styles.quickActions}>
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.actionButton, !isOn && styles.actionButtonDisabled]}
-            onPress={toggleDevice}
+            style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <Power size={24} color={isOn ? 'white' : '#94a3b8'} />
-            <Text
-              style={[styles.actionText, !isOn && styles.actionTextDisabled]}
-            >
-              {isOn ? 'Turn Off' : 'Turn On'}
-            </Text>
+            <ChevronLeft size={24} color="white" />
           </TouchableOpacity>
+          <Text style={styles.title}>{device.name}</Text>
+          <View style={styles.backButton} />
         </View>
 
-        {isOn && renderDeviceControls()}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.deviceStatus}>
+            <View style={styles.iconContainer}>
+              <Icon size={32} color="white" />
+            </View>
+            <Text style={styles.statusText}>
+              {isOn ? 'Device is On' : 'Device is Off'}
+            </Text>
+          </View>
 
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Device Information</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Device Type</Text>
-              <Text style={styles.infoValue}>{deviceName}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Location</Text>
-              <Text style={styles.infoValue}>{device.name.split(' ')[0]}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Status</Text>
-              <Text style={styles.infoValue}>
-                {isOn ? 'Online' : 'Offline'}
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                !isOn && styles.actionButtonDisabled,
+              ]}
+              onPress={toggleDevice}
+            >
+              <Power size={24} color={isOn ? 'white' : '#94a3b8'} />
+              <Text
+                style={[styles.actionText, !isOn && styles.actionTextDisabled]}
+              >
+                {isOn ? 'Turn Off' : 'Turn On'}
               </Text>
+            </TouchableOpacity>
+          </View>
+
+          {isOn && renderDeviceControls()}
+
+          <View style={styles.infoSection}>
+            <Text style={styles.sectionTitle}>Device Information</Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Device Type</Text>
+                <Text style={styles.infoValue}>{deviceName}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Location</Text>
+                <Text style={styles.infoValue}>
+                  {device.name.split(' ')[0]}
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Status</Text>
+                <Text style={styles.infoValue}>
+                  {isOn ? 'Online' : 'Offline'}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -327,6 +338,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',

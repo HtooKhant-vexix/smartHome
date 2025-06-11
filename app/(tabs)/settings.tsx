@@ -9,13 +9,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  Wifi,
+  Shield,
   Bell,
   Moon,
-  Shield,
-  HelpCircle,
-  Info,
-  LogOut,
+  Smartphone,
+  CircleHelp as HelpCircle,
   ChevronRight,
+  User,
+  Lock,
+  Globe,
+  Palette,
 } from 'lucide-react-native';
 
 interface SettingItemProps {
@@ -23,9 +27,8 @@ interface SettingItemProps {
   title: string;
   subtitle?: string;
   onPress?: () => void;
-  showToggle?: boolean;
-  isEnabled?: boolean;
-  onToggle?: (value: boolean) => void;
+  showArrow?: boolean;
+  rightElement?: React.ReactNode;
 }
 
 function SettingItem({
@@ -33,31 +36,28 @@ function SettingItem({
   title,
   subtitle,
   onPress,
-  showToggle,
-  isEnabled,
-  onToggle,
+  showArrow = true,
+  rightElement,
 }: SettingItemProps) {
   return (
     <TouchableOpacity
       style={styles.settingItem}
       onPress={onPress}
-      disabled={!onPress}
+      activeOpacity={0.7}
     >
-      <View style={styles.settingIcon}>{icon}</View>
-      <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{title}</Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+      <View style={styles.settingLeft}>
+        <View style={styles.settingIcon}>{icon}</View>
+        <View style={styles.settingContent}>
+          <Text style={styles.settingTitle}>{title}</Text>
+          {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        </View>
       </View>
-      {showToggle ? (
-        <Switch
-          value={isEnabled}
-          onValueChange={onToggle}
-          trackColor={{ false: '#374151', true: '#2563eb' }}
-          thumbColor="white"
-        />
-      ) : (
-        <ChevronRight size={20} color="#6b7280" />
-      )}
+      <View style={styles.settingRight}>
+        {rightElement}
+        {showArrow && !rightElement && (
+          <ChevronRight size={20} color="#64748b" />
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -78,47 +78,136 @@ function SettingSection({ title, children }: SettingSectionProps) {
 
 export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
+  const [autoMode, setAutoMode] = useState(false);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Settings</Text>
+          <Text style={styles.subtitle}>
+            Customize your smart home experience
+          </Text>
         </View>
 
+        {/* Account Section */}
+        <SettingSection title="Account">
+          <SettingItem
+            icon={<User size={24} color="#2563eb" />}
+            title="Profile"
+            subtitle="Manage your account information"
+            onPress={() => {}}
+          />
+          <SettingItem
+            icon={<Lock size={24} color="#2563eb" />}
+            title="Privacy & Security"
+            subtitle="Control your privacy settings"
+            onPress={() => {}}
+          />
+        </SettingSection>
+
+        {/* Device Settings */}
+        <SettingSection title="Device Settings">
+          <SettingItem
+            icon={<Wifi size={24} color="#2563eb" />}
+            title="Network Settings"
+            subtitle="Wi-Fi and connectivity options"
+            onPress={() => {}}
+          />
+          <SettingItem
+            icon={<Smartphone size={24} color="#2563eb" />}
+            title="Device Management"
+            subtitle="Add, remove, and configure devices"
+            onPress={() => {}}
+          />
+          <SettingItem
+            icon={<Shield size={24} color="#2563eb" />}
+            title="Security"
+            subtitle="Home security and access control"
+            onPress={() => {}}
+          />
+        </SettingSection>
+
+        {/* Preferences */}
         <SettingSection title="Preferences">
           <SettingItem
             icon={<Bell size={24} color="#2563eb" />}
             title="Notifications"
-            subtitle="On"
-            showToggle
-            isEnabled={notifications}
-            onToggle={setNotifications}
+            subtitle="Push notifications and alerts"
+            showArrow={false}
+            rightElement={
+              <Switch
+                value={notifications}
+                onValueChange={setNotifications}
+                trackColor={{ false: '#334155', true: '#2563eb' }}
+                thumbColor="white"
+              />
+            }
+          />
+          <SettingItem
+            icon={<Moon size={24} color="#2563eb" />}
+            title="Dark Mode"
+            subtitle={darkMode ? 'On' : 'Off'}
+            showArrow={false}
+            rightElement={
+              <Switch
+                value={darkMode}
+                onValueChange={setDarkMode}
+                trackColor={{ false: '#334155', true: '#2563eb' }}
+                thumbColor="white"
+              />
+            }
+          />
+          <SettingItem
+            icon={<Palette size={24} color="#2563eb" />}
+            title="Theme"
+            subtitle="Customize app appearance"
+            onPress={() => {}}
+          />
+          <SettingItem
+            icon={<Globe size={24} color="#2563eb" />}
+            title="Language"
+            subtitle="English"
+            onPress={() => {}}
           />
         </SettingSection>
 
-        <SettingSection title="Account">
+        {/* Automation */}
+        <SettingSection title="Automation">
           <SettingItem
-            icon={<Shield size={24} color="#2563eb" />}
-            title="Privacy & Security"
-            onPress={() => {}}
+            icon={<Moon size={24} color="#2563eb" />}
+            title="Auto Mode"
+            subtitle="Automatically adjust devices based on time"
+            showArrow={false}
+            rightElement={
+              <Switch
+                value={autoMode}
+                onValueChange={setAutoMode}
+                trackColor={{ false: '#334155', true: '#2563eb' }}
+                thumbColor="white"
+              />
+            }
           />
+        </SettingSection>
+
+        {/* Support */}
+        <SettingSection title="Support">
           <SettingItem
             icon={<HelpCircle size={24} color="#2563eb" />}
             title="Help & Support"
-            onPress={() => {}}
-          />
-          <SettingItem
-            icon={<Info size={24} color="#2563eb" />}
-            title="About"
+            subtitle="Get help and contact support"
             onPress={() => {}}
           />
         </SettingSection>
 
-        <TouchableOpacity style={styles.logoutButton}>
-          <LogOut size={24} color="#ef4444" />
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
+        {/* App Info */}
+        <View style={styles.appInfo}>
+          <Text style={styles.appInfoText}>Sixth Kendra Smart Home App</Text>
+          <Text style={styles.appVersion}>Version 1.0.0</Text>
+          {/* <Text style={styles.appCredit}>Designed by Saurabh Dubey</Text> */}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -127,6 +216,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingBottom: 20,
     backgroundColor: '#0f172a',
   },
   header: {
@@ -135,40 +225,54 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontFamily: 'Inter-Bold',
     color: 'white',
   },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+    marginTop: 4,
+  },
   section: {
-    marginBottom: 24,
+    marginBottom: 26,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: '#94a3b8',
-    marginLeft: 20,
+    color: 'white',
+    paddingHorizontal: 20,
     marginBottom: 12,
   },
   sectionContent: {
     backgroundColor: '#1e293b',
-    borderRadius: 16,
     marginHorizontal: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   settingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   settingContent: {
     flex: 1,
@@ -184,20 +288,32 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 2,
   },
-  logoutButton: {
+  settingRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1e293b',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    paddingVertical: 16,
-    marginBottom: 20,
   },
-  logoutText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: '#ef4444',
-    marginLeft: 8,
+  appInfo: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingTop: 0,
+    paddingHorizontal: 20,
+    marginBottom: 70,
+  },
+  appInfoText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  appVersion: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+    marginBottom: 8,
+  },
+  appCredit: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#64748b',
   },
 });
