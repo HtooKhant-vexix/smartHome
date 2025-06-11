@@ -10,6 +10,7 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
+import { View } from 'react-native';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,12 +35,37 @@ export default function RootLayout() {
   }
 
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="+not-found" />
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade',
+          animationDuration: 80,
+          contentStyle: { backgroundColor: '#000' },
+          presentation: 'transparentModal',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          fullScreenGestureEnabled: true,
+        }}
+      >
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            animation: 'fade',
+            animationDuration: 80,
+            gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="+not-found"
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 80,
+            gestureEnabled: true,
+          }}
+        />
       </Stack>
       <StatusBar style="light" />
-    </>
+    </View>
   );
 }
