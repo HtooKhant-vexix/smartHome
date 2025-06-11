@@ -16,7 +16,15 @@ interface EnergyCardProps {
   icon: React.ReactNode;
 }
 
-function EnergyCard({ title, value, unit, period, trend, color, icon }: EnergyCardProps) {
+function EnergyCard({
+  title,
+  value,
+  unit,
+  period,
+  trend,
+  color,
+  icon,
+}: EnergyCardProps) {
   return (
     <LinearGradient
       colors={color}
@@ -25,9 +33,7 @@ function EnergyCard({ title, value, unit, period, trend, color, icon }: EnergyCa
       end={{ x: 1, y: 1 }}
     >
       <View style={styles.energyHeader}>
-        <View style={styles.energyIcon}>
-          {icon}
-        </View>
+        <View style={styles.energyIcon}>{icon}</View>
         <View style={styles.trendContainer}>
           {trend === 'up' ? (
             <TrendingUp size={16} color="white" />
@@ -59,11 +65,11 @@ function UsageBar({ device, percentage, usage, color }: UsageBarProps) {
         <Text style={styles.usageValue}>{usage}</Text>
       </View>
       <View style={styles.usageBarContainer}>
-        <View 
+        <View
           style={[
-            styles.usageBarFill, 
-            { width: `${percentage}%`, backgroundColor: color }
-          ]} 
+            styles.usageBarFill,
+            { width: `${percentage}%`, backgroundColor: color },
+          ]}
         />
       </View>
     </View>
@@ -72,11 +78,31 @@ function UsageBar({ device, percentage, usage, color }: UsageBarProps) {
 
 export default function AnalyticsScreen() {
   const deviceUsage = [
-    { device: 'Smart Lights', percentage: 85, usage: '45 kWh', color: '#2563eb' },
-    { device: 'Air Conditioning', percentage: 70, usage: '38 kWh', color: '#0ea5e9' },
+    {
+      device: 'Smart Lights',
+      percentage: 85,
+      usage: '45 kWh',
+      color: '#2563eb',
+    },
+    {
+      device: 'Air Conditioning',
+      percentage: 70,
+      usage: '38 kWh',
+      color: '#0ea5e9',
+    },
     { device: 'Smart TV', percentage: 45, usage: '24 kWh', color: '#06b6d4' },
-    { device: 'Air Purifier', percentage: 30, usage: '16 kWh', color: '#0891b2' },
-    { device: 'Other Devices', percentage: 20, usage: '11 kWh', color: '#0e7490' },
+    {
+      device: 'Air Purifier',
+      percentage: 30,
+      usage: '16 kWh',
+      color: '#0891b2',
+    },
+    {
+      device: 'Other Devices',
+      percentage: 20,
+      usage: '11 kWh',
+      color: '#0e7490',
+    },
   ];
 
   return (
@@ -85,7 +111,9 @@ export default function AnalyticsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Energy Analytics</Text>
-          <Text style={styles.subtitle}>Monitor your smart home consumption</Text>
+          <Text style={styles.subtitle}>
+            Monitor your smart home consumption
+          </Text>
         </View>
 
         {/* Energy Cards */}
@@ -127,7 +155,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Cost Summary */}
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Cost Summary</Text>
           <View style={styles.costContainer}>
             <View style={styles.costCard}>
@@ -141,20 +169,29 @@ export default function AnalyticsScreen() {
               <Text style={styles.costChange}>+8% from last month</Text>
             </View>
           </View>
-        </View>
+        </View> */}
 
         {/* Tips */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Energy Saving Tips</Text>
-          <View style={styles.tipsContainer}>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>💡 Turn off lights when not in use to save up to 15% on electricity</Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>❄️ Set AC temperature to 24°C for optimal energy efficiency</Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>📺 Use sleep mode on TV to reduce standby power consumption</Text>
+        <View style={styles.section1}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Energy Saving Tips</Text>
+            <View style={styles.tipsContainer}>
+              <View style={styles.tipCard}>
+                <Text style={styles.tipText}>
+                  💡 Turn off lights when not in use to save up to 15% on
+                  electricity
+                </Text>
+              </View>
+              <View style={styles.tipCard}>
+                <Text style={styles.tipText}>
+                  ❄️ Set AC temperature to 24°C for optimal energy efficiency
+                </Text>
+              </View>
+              <View style={styles.tipCard}>
+                <Text style={styles.tipText}>
+                  📺 Use sleep mode on TV to reduce standby power consumption
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -166,6 +203,7 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingBottom: 20,
     backgroundColor: '#0f172a',
   },
   header: {
@@ -245,6 +283,10 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
     marginBottom: 30,
+  },
+  section1: {
+    // paddingHorizontal: 20,
+    marginBottom: 60,
   },
   sectionTitle: {
     fontSize: 20,

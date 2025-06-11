@@ -1,8 +1,25 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CreditCard as Edit3, MapPin, Calendar, Award, Leaf, Zap, Chrome as Home, Settings, LogOut } from 'lucide-react-native';
+import {
+  CreditCard as Edit3,
+  MapPin,
+  Calendar,
+  Award,
+  Leaf,
+  Zap,
+  Chrome as Home,
+  Settings,
+  LogOut,
+} from 'lucide-react-native';
 
 interface StatCardProps {
   icon: React.ReactNode;
@@ -19,9 +36,7 @@ function StatCard({ icon, value, label, color }: StatCardProps) {
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
     >
-      <View style={styles.statIcon}>
-        {icon}
-      </View>
+      <View style={styles.statIcon}>{icon}</View>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </LinearGradient>
@@ -36,10 +51,12 @@ interface MenuItemProps {
 
 function MenuItem({ icon, title, onPress }: MenuItemProps) {
   return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.menuIcon}>
-        {icon}
-      </View>
+    <TouchableOpacity
+      style={styles.menuItem}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.menuIcon}>{icon}</View>
       <Text style={styles.menuTitle}>{title}</Text>
     </TouchableOpacity>
   );
@@ -67,22 +84,24 @@ export default function ProfileScreen() {
           <View style={styles.profileHeader}>
             <View style={styles.avatarContainer}>
               <Image
-                source={{ uri: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2' }}
+                source={{
+                  uri: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
+                }}
                 style={styles.avatar}
               />
               <View style={styles.onlineIndicator} />
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>Saurabh Dubey</Text>
-              <Text style={styles.profileEmail}>saurabh@example.com</Text>
+              <Text style={styles.profileName}>Htoo Khant</Text>
+              <Text style={styles.profileEmail}>test@example.com</Text>
               <View style={styles.locationContainer}>
                 <MapPin size={16} color="rgba(255, 255, 255, 0.8)" />
-                <Text style={styles.locationText}>Mumbai, India</Text>
+                <Text style={styles.locationText}>Bangkok, Thailand</Text>
               </View>
             </View>
           </View>
-          
-          <View style={styles.membershipContainer}>
+
+          {/* <View style={styles.membershipContainer}>
             <View style={styles.membershipBadge}>
               <Award size={16} color="#2563eb" />
               <Text style={styles.membershipText}>Premium Member</Text>
@@ -91,7 +110,7 @@ export default function ProfileScreen() {
               <Calendar size={16} color="rgba(255, 255, 255, 0.8)" />
               <Text style={styles.joinedText}>Joined Nov 2023</Text>
             </View>
-          </View>
+          </View> */}
         </LinearGradient>
 
         {/* Stats */}
@@ -117,7 +136,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Achievements */}
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Achievements</Text>
           <View style={styles.achievementsContainer}>
             <View style={styles.achievementItem}>
@@ -126,23 +145,27 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.achievementContent}>
                 <Text style={styles.achievementTitle}>Eco Warrior</Text>
-                <Text style={styles.achievementDescription}>Reduced energy consumption by 20%</Text>
+                <Text style={styles.achievementDescription}>
+                  Reduced energy consumption by 20%
+                </Text>
               </View>
               <Text style={styles.achievementDate}>2 days ago</Text>
             </View>
-            
+
             <View style={styles.achievementItem}>
               <View style={styles.achievementIcon}>
                 <Zap size={24} color="#0ea5e9" />
               </View>
               <View style={styles.achievementContent}>
                 <Text style={styles.achievementTitle}>Smart Saver</Text>
-                <Text style={styles.achievementDescription}>Saved $50 on electricity bill</Text>
+                <Text style={styles.achievementDescription}>
+                  Saved $50 on electricity bill
+                </Text>
               </View>
               <Text style={styles.achievementDate}>1 week ago</Text>
             </View>
           </View>
-        </View>
+        </View> */}
 
         {/* Quick Actions */}
         <View style={styles.section}>
@@ -174,6 +197,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',
@@ -205,7 +229,7 @@ const styles = StyleSheet.create({
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    // marginBottom: 20,
   },
   avatarContainer: {
     position: 'relative',

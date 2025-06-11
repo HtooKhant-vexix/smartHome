@@ -1,5 +1,12 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, ChartBar as BarChart3, Settings, User } from 'lucide-react-native';
+import {
+  Chrome as Home,
+  ChartBar as BarChart3,
+  Settings,
+  User,
+  ChartPie,
+} from 'lucide-react-native';
+import { View } from 'react-native';
 
 export default function TabLayout() {
   return (
@@ -8,26 +15,44 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: '#1e293b',
-          borderTopColor: '#334155',
-          borderTopWidth: 1,
-          height: 90,
-          paddingBottom: 20,
-          paddingTop: 10,
+          borderTopColor: 'transparent',
+          // borderTopWidth: 0,
+          marginHorizontal: 10,
+          borderRadius: 40,
+          position: 'absolute',
+          bottom: 17,
+          height: 80,
+          paddingTop: 20,
+          borderColor: '#2563eb90',
+          borderWidth: 1,
         },
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#64748b',
-        tabBarLabelStyle: {
-          fontFamily: 'Inter-Medium',
-          fontSize: 12,
-          marginTop: 4,
+        tabBarIconStyle: {
+          fontSize: 20,
         },
-      }}>
+        tabBarActiveTintColor: 'white',
+        tabBarInactiveTintColor: 'white',
+        // tabBarLabelStyle: {
+        //   fontFamily: 'Inter-Medium',
+        //   fontSize: 12,
+        //   marginTop: 4,
+        // },
+        tabBarShowLabel: false,
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View
+              style={{
+                backgroundColor: focused ? '#2563eb' : 'transparent',
+                borderRadius: 9999,
+                padding: 16,
+              }}
+            >
+              <Home size={size} color={'white'} />
+            </View>
           ),
         }}
       />
@@ -35,8 +60,16 @@ export default function TabLayout() {
         name="analytics"
         options={{
           title: 'Analytics',
-          tabBarIcon: ({ size, color }) => (
-            <BarChart3 size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View
+              style={{
+                backgroundColor: focused ? '#2563eb' : 'transparent',
+                borderRadius: 9999,
+                padding: 16,
+              }}
+            >
+              <ChartPie size={size} color={color} />
+            </View>
           ),
         }}
       />
@@ -44,8 +77,16 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ size, color }) => (
-            <Settings size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View
+              style={{
+                backgroundColor: focused ? '#2563eb' : 'transparent',
+                borderRadius: 9999,
+                padding: 16,
+              }}
+            >
+              <Settings size={size} color={color} />
+            </View>
           ),
         }}
       />
@@ -53,8 +94,16 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View
+              style={{
+                backgroundColor: focused ? '#2563eb' : 'transparent',
+                borderRadius: 9999,
+                padding: 16,
+              }}
+            >
+              <User size={size} color={color} />
+            </View>
           ),
         }}
       />

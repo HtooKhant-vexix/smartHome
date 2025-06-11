@@ -21,6 +21,7 @@ import {
   Gauge,
   Plus,
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -41,10 +42,13 @@ function DeviceCard({
   onToggle,
   onPress,
 }: DeviceCardProps) {
+  const router = useRouter();
+  const deviceId = title.toLowerCase().replace(/\s+/g, '-');
+
   return (
     <TouchableOpacity
       style={[styles.deviceCard, { opacity: isOn ? 1 : 0.7 }]}
-      onPress={onPress}
+      onPress={() => router.push(`/device/${deviceId}`)}
       activeOpacity={0.8}
     >
       <View style={styles.deviceHeader}>
@@ -219,6 +223,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingBottom: 20,
+  },
+  scrollView: {
+    paddingBottom: 70,
   },
   header: {
     flexDirection: 'row',
@@ -398,7 +406,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 16,
     paddingVertical: 20,
-    marginBottom: 30,
+    marginBottom: 80,
     borderWidth: 2,
     borderColor: '#334155',
     borderStyle: 'dashed',
