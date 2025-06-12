@@ -22,12 +22,34 @@ import {
   Plus,
   Home,
   DoorOpen,
+  BedDouble,
+  Utensils,
+  Bath,
+  Sofa,
+  Car,
+  Briefcase,
+  Dumbbell,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { RoomCard } from '../../components/RoomCard';
 import { StatCard } from '../../components/StatCard';
+import { useRooms } from '../context/RoomContext';
+import AddRoomModal from '../components/AddRoomModal';
 
 const { width } = Dimensions.get('window');
+
+const ICON_MAP = {
+  Home,
+  DoorOpen,
+  BedDouble,
+  Utensils,
+  Bath,
+  Sofa,
+  Tv,
+  Car,
+  Briefcase,
+  Dumbbell,
+};
 
 interface DeviceCardProps {
   title: string;
@@ -79,6 +101,14 @@ const DeviceCard = ({
 
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
+  const [isAddRoomModalVisible, setIsAddRoomModalVisible] = useState(false);
+  const { rooms } = useRooms();
+
+  console.log(rooms, rooms.length, '...................');
+
+  const getIconComponent = (iconName: string) => {
+    return ICON_MAP[iconName as keyof typeof ICON_MAP] || Home;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -168,10 +198,14 @@ export default function HomeScreen() {
         {/* Content based on active tab */}
         {activeTab === 'rooms' ? (
           <View style={styles.roomGrid}>
-            <RoomCard roomId="living-room" icon={Home} />
-            <RoomCard roomId="bedroom" icon={DoorOpen} />
-            <RoomCard roomId="kitchen" icon={Home} />
-            <RoomCard roomId="bathroom" icon={DoorOpen} />
+            {rooms.map((room) => (
+              <RoomCard
+                data={room}
+                key={room.id}
+                roomId={room.id}
+                icon={getIconComponent(room.icon)}
+              />
+            ))}
           </View>
         ) : (
           <View style={styles.deviceGrid}>
@@ -203,13 +237,25 @@ export default function HomeScreen() {
         )}
 
         {/* Add Button */}
-        <TouchableOpacity style={styles.addDeviceButton}>
+        <TouchableOpacity
+          style={styles.addDeviceButton}
+          onPress={() => {
+            if (activeTab === 'rooms') {
+              setIsAddRoomModalVisible(true);
+            }
+          }}
+        >
           <Plus size={24} color="#2563eb" />
           <Text style={styles.addDeviceText}>
             Add new {activeTab === 'rooms' ? 'room' : 'device'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <AddRoomModal
+        visible={isAddRoomModalVisible}
+        onClose={() => setIsAddRoomModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

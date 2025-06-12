@@ -10,17 +10,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
-import {
-  defaultRoomData,
-  deviceIcons,
-  DeviceType,
-} from '../../constants/defaultData';
+import { deviceIcons, DeviceType } from '../../constants/defaultData';
+import { useRooms } from '../context/RoomContext';
 
 export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const roomId = id as string;
-  const room = defaultRoomData[roomId];
+  const { rooms } = useRooms();
+  const room = rooms.find((r) => r.id === roomId);
+
+  if (!room) {
+    return null;
+  }
 
   // Get all devices in this room
   const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>
@@ -93,26 +95,6 @@ export default function RoomDetailScreen() {
 
           {Object.entries(room.devices).map(([deviceType, devices]) => (
             <View key={deviceType} style={styles.deviceTypeSection}>
-              {/* <TouchableOpacity
-                style={styles.deviceTypeHeader}
-                onPress={() => handleDeviceTypePress(deviceType as DeviceType)}
-              >
-                <View style={styles.deviceTypeInfo}>
-                  <Text style={styles.deviceTypeTitle}>
-                    {deviceType
-                      .split('-')
-                      .map(
-                        (word) => word.charAt(0).toUpperCase() + word.slice(1)
-                      )
-                      .join(' ')}
-                  </Text>
-                  <Text style={styles.deviceTypeCount}>
-                    {devices.length}{' '}
-                    {devices.length === 1 ? 'device' : 'devices'}
-                  </Text>
-                </View>
-                <ChevronRight size={20} color="#94a3b8" />
-              </TouchableOpacity> */}
               <TouchableOpacity
                 style={styles.roomHeader}
                 onPress={() => handleDeviceTypePress(deviceType as DeviceType)}

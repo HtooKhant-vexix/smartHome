@@ -32,9 +32,9 @@ export default function DeviceListScreen() {
     setRooms((prevRooms) => {
       const newRooms = { ...prevRooms };
       const room = newRooms[roomId];
-      const devices = room.devices[deviceType] || [];
+      const devices = room?.devices[deviceType] || [];
 
-      const updatedDevices = devices.map((device: Device) =>
+      const updatedDevices = devices?.map((device: Device) =>
         device.id === deviceId
           ? { ...device, isActive: !device.isActive }
           : device

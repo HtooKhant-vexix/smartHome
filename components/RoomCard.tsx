@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { defaultRoomData, DeviceType } from '../constants/defaultData';
+import { useRooms } from '../app/context/RoomContext';
+import { DeviceType } from '../constants/defaultData';
 
 interface RoomCardProps {
   roomId: string;
@@ -10,7 +11,12 @@ interface RoomCardProps {
 
 export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
   const router = useRouter();
-  const room = defaultRoomData[roomId];
+  const { rooms } = useRooms();
+  const room = rooms.find((r) => r.id === roomId);
+
+  if (!room) {
+    return null;
+  }
 
   // Calculate total devices and active devices
   const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>

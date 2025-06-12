@@ -74,8 +74,8 @@ export const defaultRoomData: Record<string, Room> = {
     name: 'Kitchen',
     devices: {
       'smart-light': [
-        { id: '5', name: 'Main Light', isActive: true },
-        { id: '6', name: 'Under Cabinet', isActive: true },
+        // { id: '5', name: 'Main Light', isActive: true },
+        // { id: '6', name: 'Under Cabinet', isActive: true },
       ],
     },
   },
