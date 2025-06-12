@@ -79,16 +79,6 @@ const DeviceCard = ({
 
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
-  const [devices, setDevices] = useState({
-    smartLight: true,
-    smartAC: false,
-    smartTV: false,
-    airPurifier: true,
-  });
-
-  const toggleDevice = (device: keyof typeof devices) => {
-    setDevices((prev) => ({ ...prev, [device]: !prev[device] }));
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -178,10 +168,10 @@ export default function HomeScreen() {
         {/* Content based on active tab */}
         {activeTab === 'rooms' ? (
           <View style={styles.roomGrid}>
-            <RoomCard title="Living Room" deviceCount={4} icon={Home} />
-            <RoomCard title="Bedroom" deviceCount={3} icon={DoorOpen} />
-            <RoomCard title="Kitchen" deviceCount={2} icon={Home} />
-            <RoomCard title="Bathroom" deviceCount={1} icon={DoorOpen} />
+            <RoomCard roomId="living-room" icon={Home} />
+            <RoomCard roomId="bedroom" icon={DoorOpen} />
+            <RoomCard roomId="kitchen" icon={Home} />
+            <RoomCard roomId="bathroom" icon={DoorOpen} />
           </View>
         ) : (
           <View style={styles.deviceGrid}>

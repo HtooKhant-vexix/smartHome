@@ -8,90 +8,33 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Lightbulb,
-  Wind,
-  Tv,
-  Monitor,
-  Settings,
-  Plus,
-  ChevronRight,
-} from 'lucide-react-native';
+import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
-
-const deviceIcons = {
-  'smart-light': Lightbulb,
-  'smart-ac': Wind,
-  'smart-tv': Tv,
-  'air-purifier': Monitor,
-};
-
-// Mock data for rooms and their devices
-const roomData = {
-  'living-room': {
-    name: 'Living Room',
-    devices: {
-      'smart-light': [
-        { id: '1', name: 'Main Light', isActive: true },
-        { id: '2', name: 'Lamp', isActive: false },
-      ],
-      'smart-ac': [{ id: '1', name: 'Main AC', isActive: true }],
-      'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
-      'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
-    },
-  },
-  bedroom: {
-    name: 'Bedroom',
-    devices: {
-      'smart-light': [
-        { id: '3', name: 'Ceiling Light', isActive: true },
-        { id: '4', name: 'Night Lamp', isActive: false },
-      ],
-      'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
-      'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
-      'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
-    },
-  },
-  kitchen: {
-    name: 'Kitchen',
-    devices: {
-      'smart-light': [
-        { id: '5', name: 'Main Light', isActive: true },
-        { id: '6', name: 'Under Cabinet', isActive: true },
-      ],
-    },
-  },
-  bathroom: {
-    name: 'Bathroom',
-    devices: {
-      'smart-light': [
-        { id: '7', name: 'Main Light', isActive: false },
-        { id: '8', name: 'Mirror Light', isActive: true },
-      ],
-    },
-  },
-};
+import {
+  deviceIcons,
+  defaultRoomData,
+  getDeviceTitle,
+  DeviceType,
+  Room,
+  Device,
+} from '../../constants/defaultData';
 
 export default function DeviceListScreen() {
   const router = useRouter();
   const { type } = useLocalSearchParams();
-  const deviceType = type as string;
-  const deviceTitle = deviceType
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  const deviceType = type as DeviceType;
+  const deviceTitle = getDeviceTitle(deviceType);
 
-  const [rooms, setRooms] = React.useState(roomData);
+  const [rooms, setRooms] =
+    React.useState<Record<string, Room>>(defaultRoomData);
 
   const toggleDevice = (roomId: string, deviceId: string) => {
     setRooms((prevRooms) => {
       const newRooms = { ...prevRooms };
       const room = newRooms[roomId];
-      const deviceType = type as keyof typeof room.devices;
-      const devices = room.devices[deviceType];
+      const devices = room.devices[deviceType] || [];
 
-      const updatedDevices = devices.map((device) =>
+      const updatedDevices = devices.map((device: Device) =>
         device.id === deviceId
           ? { ...device, isActive: !device.isActive }
           : device
@@ -102,18 +45,17 @@ export default function DeviceListScreen() {
     });
   };
 
-  const DeviceIcon =
-    deviceIcons[deviceType as keyof typeof deviceIcons] || Lightbulb;
+  const DeviceIcon = deviceIcons[deviceType];
 
   // Calculate total devices and active devices
   const totalDevices = Object.values(rooms).reduce((total, room) => {
-    const devices = room.devices[deviceType as keyof typeof room.devices] || [];
+    const devices = room.devices[deviceType] || [];
     return total + devices.length;
   }, 0);
 
   const activeDevices = Object.values(rooms).reduce((total, room) => {
-    const devices = room.devices[deviceType as keyof typeof room.devices] || [];
-    return total + devices.filter((device) => device.isActive).length;
+    const devices = room.devices[deviceType] || [];
+    return total + devices.filter((device: Device) => device.isActive).length;
   }, 0);
 
   return (
@@ -156,8 +98,7 @@ export default function DeviceListScreen() {
           </View>
 
           {Object.entries(rooms).map(([roomId, room]) => {
-            const devices =
-              room.devices[deviceType as keyof typeof room.devices] || [];
+            const devices = room.devices[deviceType] || [];
             if (devices.length === 0) return null;
 
             return (
@@ -170,7 +111,7 @@ export default function DeviceListScreen() {
                   <ChevronRight size={20} color="#94a3b8" />
                 </TouchableOpacity>
 
-                {devices.map((device) => (
+                {devices.map((device: Device) => (
                   <TouchableOpacity
                     key={device.id}
                     onPress={() =>

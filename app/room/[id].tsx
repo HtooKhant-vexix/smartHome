@@ -8,35 +8,48 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Lightbulb,
-  Wind,
-  Tv,
-  Monitor,
-  Settings,
-} from 'lucide-react-native';
+import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
+import {
+  defaultRoomData,
+  deviceIcons,
+  DeviceType,
+} from '../../constants/defaultData';
 
 export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const roomName = (id as string)
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  const roomId = id as string;
+  const room = defaultRoomData[roomId];
 
-  // Mock data - in a real app, this would come from your data source
-  const [devices, setDevices] = React.useState({
-    light1: true,
-    light2: false,
-    ac: true,
-    tv: false,
-    airPurifier: true,
-  });
+  // Get all devices in this room
+  const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>
+    devices.map((device) => ({
+      ...device,
+      type: type as DeviceType,
+    }))
+  );
 
-  const toggleDevice = (device: keyof typeof devices) => {
-    setDevices((prev) => ({ ...prev, [device]: !prev[device] }));
+  const activeDevices = allDevices.filter((device) => device.isActive).length;
+  const totalDevices = allDevices.length;
+
+  const toggleDevice = (deviceType: DeviceType, deviceId: string) => {
+    // In a real app, this would update the state and sync with backend
+    console.log('Toggle device:', deviceType, deviceId);
+  };
+
+  const handleDevicePress = (deviceType: DeviceType, deviceId: string) => {
+    router.push({
+      pathname: '/device/[type]/[id]',
+      params: { type: deviceType, id: deviceId },
+    });
+  };
+
+  const handleDeviceTypePress = (deviceType: DeviceType) => {
+    router.push({
+      pathname: '/device/list',
+      params: { type: deviceType },
+    });
   };
 
   return (
@@ -50,7 +63,7 @@ export default function RoomDetailScreen() {
           >
             <ArrowLeft size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.roomName}>{roomName}</Text>
+          <Text style={styles.roomName}>{room.name}</Text>
           <TouchableOpacity style={styles.settingsButton}>
             <Settings size={24} color="#2563eb" />
           </TouchableOpacity>
@@ -59,50 +72,79 @@ export default function RoomDetailScreen() {
         {/* Room Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {Object.values(devices).filter(Boolean).length}
-            </Text>
+            <Text style={styles.statValue}>{activeDevices}</Text>
             <Text style={styles.statLabel}>Active Devices</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{Object.keys(devices).length}</Text>
+            <Text style={styles.statValue}>{totalDevices}</Text>
             <Text style={styles.statLabel}>Total Devices</Text>
           </View>
         </View>
 
         {/* Devices List */}
         <View style={styles.devicesContainer}>
-          <Text style={styles.sectionTitle}>Devices</Text>
-          <DeviceItem
-            title="Main Light"
-            icon={Lightbulb}
-            isActive={devices.light1}
-            onToggle={() => toggleDevice('light1')}
-          />
-          <DeviceItem
-            title="Secondary Light"
-            icon={Lightbulb}
-            isActive={devices.light2}
-            onToggle={() => toggleDevice('light2')}
-          />
-          <DeviceItem
-            title="Air Conditioner"
-            icon={Wind}
-            isActive={devices.ac}
-            onToggle={() => toggleDevice('ac')}
-          />
-          <DeviceItem
-            title="Smart TV"
-            icon={Tv}
-            isActive={devices.tv}
-            onToggle={() => toggleDevice('tv')}
-          />
-          <DeviceItem
-            title="Air Purifier"
-            icon={Monitor}
-            isActive={devices.airPurifier}
-            onToggle={() => toggleDevice('airPurifier')}
-          />
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Devices</Text>
+            <TouchableOpacity style={styles.addButton}>
+              <Plus size={20} color="#2563eb" />
+              <Text style={styles.addButtonText}>Add Device</Text>
+            </TouchableOpacity>
+          </View>
+
+          {Object.entries(room.devices).map(([deviceType, devices]) => (
+            <View key={deviceType} style={styles.deviceTypeSection}>
+              {/* <TouchableOpacity
+                style={styles.deviceTypeHeader}
+                onPress={() => handleDeviceTypePress(deviceType as DeviceType)}
+              >
+                <View style={styles.deviceTypeInfo}>
+                  <Text style={styles.deviceTypeTitle}>
+                    {deviceType
+                      .split('-')
+                      .map(
+                        (word) => word.charAt(0).toUpperCase() + word.slice(1)
+                      )
+                      .join(' ')}
+                  </Text>
+                  <Text style={styles.deviceTypeCount}>
+                    {devices.length}{' '}
+                    {devices.length === 1 ? 'device' : 'devices'}
+                  </Text>
+                </View>
+                <ChevronRight size={20} color="#94a3b8" />
+              </TouchableOpacity> */}
+              <TouchableOpacity
+                style={styles.roomHeader}
+                onPress={() => handleDeviceTypePress(deviceType as DeviceType)}
+              >
+                <Text style={styles.roomTitle}>
+                  {deviceType
+                    .split('-')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ')}
+                </Text>
+                <ChevronRight size={20} color="#94a3b8" />
+              </TouchableOpacity>
+
+              {devices.map((device) => (
+                <TouchableOpacity
+                  key={device.id}
+                  onPress={() =>
+                    handleDevicePress(deviceType as DeviceType, device.id)
+                  }
+                >
+                  <DeviceItem
+                    title={device.name}
+                    icon={deviceIcons[deviceType as DeviceType]}
+                    isActive={device.isActive}
+                    onToggle={() =>
+                      toggleDevice(deviceType as DeviceType, device.id)
+                    }
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -168,10 +210,66 @@ const styles = StyleSheet.create({
   devicesContainer: {
     paddingHorizontal: 20,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 20,
     fontFamily: 'Inter-SemiBold',
     color: 'white',
-    marginBottom: 16,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#2563eb',
+    marginLeft: 4,
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+  },
+  deviceTypeSection: {
+    marginBottom: 24,
+  },
+  deviceTypeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 12,
+  },
+  deviceTypeInfo: {
+    flex: 1,
+  },
+  deviceTypeTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
+    marginBottom: 2,
+  },
+  roomHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  roomTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#94a3b8',
+  },
+  deviceTypeCount: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
   },
 });

@@ -11,24 +11,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArrowLeft,
-  Lightbulb,
-  Wind,
-  Tv,
-  Monitor,
   Settings,
   Power,
   Clock,
   Sliders,
   Battery,
   Wifi,
+  Wind,
 } from 'lucide-react-native';
-
-const deviceIcons = {
-  'smart-light': Lightbulb,
-  'smart-ac': Wind,
-  'smart-tv': Tv,
-  'air-purifier': Monitor,
-};
+import {
+  deviceIcons,
+  defaultDeviceStates,
+  getDeviceTitle,
+  DeviceType,
+} from '../../../constants/defaultData';
 
 interface ControlItemProps {
   icon: React.ElementType;
@@ -57,21 +53,21 @@ const ControlItem = ({ icon: Icon, label, value, unit }: ControlItemProps) => {
 export default function DeviceDetailScreen() {
   const router = useRouter();
   const { type, id } = useLocalSearchParams();
-  const deviceType = type as string;
+  const deviceType = type as DeviceType;
   const deviceId = id as string;
 
-  const deviceTitle = deviceType
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  const deviceTitle = getDeviceTitle(deviceType);
 
-  const [isActive, setIsActive] = useState(true);
-  const [brightness, setBrightness] = useState(75);
-  const [temperature, setTemperature] = useState(23);
-  const [batteryLevel, setBatteryLevel] = useState(85);
+  const [isActive, setIsActive] = useState(defaultDeviceStates.isActive);
+  const [brightness, setBrightness] = useState(defaultDeviceStates.brightness);
+  const [temperature, setTemperature] = useState(
+    defaultDeviceStates.temperature
+  );
+  const [batteryLevel, setBatteryLevel] = useState(
+    defaultDeviceStates.batteryLevel
+  );
 
-  const DeviceIcon =
-    deviceIcons[deviceType as keyof typeof deviceIcons] || Lightbulb;
+  const DeviceIcon = deviceIcons[deviceType];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -101,7 +97,7 @@ export default function DeviceDetailScreen() {
             <Text style={styles.statusText}>
               {isActive ? 'Active' : 'Inactive'}
             </Text>
-            <Text style={styles.lastSeen}>Last seen 2 minutes ago</Text>
+            <Text style={styles.lastSeen}>{defaultDeviceStates.lastSeen}</Text>
           </View>
           <Switch
             value={isActive}
@@ -120,14 +116,22 @@ export default function DeviceDetailScreen() {
               label="Power"
               value={isActive ? 'On' : 'Off'}
             />
-            <ControlItem icon={Clock} label="Uptime" value="2h 30m" />
+            <ControlItem
+              icon={Clock}
+              label="Uptime"
+              value={defaultDeviceStates.uptime}
+            />
             <ControlItem
               icon={Battery}
               label="Battery"
               value={batteryLevel}
               unit="%"
             />
-            <ControlItem icon={Wifi} label="Signal" value="Strong" />
+            <ControlItem
+              icon={Wifi}
+              label="Signal"
+              value={defaultDeviceStates.signal}
+            />
           </View>
         </View>
 
@@ -162,15 +166,19 @@ export default function DeviceDetailScreen() {
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Model</Text>
-              <Text style={styles.infoValue}>Smart Home Pro 2024</Text>
+              <Text style={styles.infoValue}>{defaultDeviceStates.model}</Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Firmware</Text>
-              <Text style={styles.infoValue}>v2.1.0</Text>
+              <Text style={styles.infoValue}>
+                {defaultDeviceStates.firmware}
+              </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Last Update</Text>
-              <Text style={styles.infoValue}>2 days ago</Text>
+              <Text style={styles.infoValue}>
+                {defaultDeviceStates.lastUpdate}
+              </Text>
             </View>
           </View>
         </View>

@@ -1,16 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import { defaultRoomData, DeviceType } from '../constants/defaultData';
 
 interface RoomCardProps {
-  title: string;
-  deviceCount: number;
+  roomId: string;
   icon: React.ElementType;
 }
 
-export const RoomCard = ({ title, deviceCount, icon: Icon }: RoomCardProps) => {
+export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
   const router = useRouter();
-  const roomType = title.toLowerCase().replace(/\s+/g, '-');
+  const room = defaultRoomData[roomId];
+
+  // Calculate total devices and active devices
+  const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>
+    devices.map((device) => ({
+      ...device,
+      type: type as DeviceType,
+    }))
+  );
+
+  const activeDevices = allDevices.filter((device) => device.isActive).length;
+  const totalDevices = allDevices.length;
 
   return (
     <TouchableOpacity
@@ -18,7 +29,7 @@ export const RoomCard = ({ title, deviceCount, icon: Icon }: RoomCardProps) => {
       onPress={() =>
         router.push({
           pathname: '/room/[id]',
-          params: { id: roomType },
+          params: { id: roomId },
         })
       }
       activeOpacity={0.8}
@@ -27,10 +38,23 @@ export const RoomCard = ({ title, deviceCount, icon: Icon }: RoomCardProps) => {
         <View style={styles.roomIconContainer}>
           <Icon size={24} color="white" />
         </View>
+        <View style={styles.deviceStatusContainer}>
+          <View style={styles.deviceStatus}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: activeDevices > 0 ? '#22c55e' : '#ef4444' },
+              ]}
+            />
+            <Text style={styles.deviceStatusText}>
+              {activeDevices} / {totalDevices}
+            </Text>
+          </View>
+        </View>
       </View>
-      <Text style={styles.roomTitle}>{title}</Text>
+      <Text style={styles.roomTitle}>{room.name}</Text>
       <Text style={styles.roomSubtitle}>
-        {deviceCount} {deviceCount === 1 ? 'device' : 'devices'}
+        {totalDevices} {totalDevices === 1 ? 'device' : 'devices'}
       </Text>
     </TouchableOpacity>
   );
@@ -57,6 +81,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  deviceStatusContainer: {
+    // backgroundColor: '#334155',
+    // borderRadius: 12,
+    // padding: 6,
+    alignItems: 'flex-end',
+  },
+  deviceStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#334155',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  deviceStatusText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
   },
   roomTitle: {
     fontSize: 18,
