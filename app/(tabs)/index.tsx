@@ -20,8 +20,12 @@ import {
   Droplets,
   Gauge,
   Plus,
+  Home,
+  DoorOpen,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { RoomCard } from '../../components/RoomCard';
+import { StatCard } from '../../components/StatCard';
 
 const { width } = Dimensions.get('window');
 
@@ -73,23 +77,8 @@ const DeviceCard = ({
   );
 };
 
-interface StatCardProps {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-}
-
-function StatCard({ label, value, icon }: StatCardProps) {
-  return (
-    <View style={styles.statCard}>
-      <View style={styles.statIcon}>{icon}</View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 export default function HomeScreen() {
+  const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
   const [devices, setDevices] = useState({
     smartLight: true,
     smartAC: false,
@@ -107,7 +96,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Hello, Saurabh</Text>
+            <Text style={styles.greeting}>Hello, Htoo</Text>
             <Text style={styles.subtitle}>Welcome back to your smart home</Text>
           </View>
           <TouchableOpacity style={styles.notificationButton}>
@@ -153,47 +142,82 @@ export default function HomeScreen() {
         {/* Room/Devices Toggle */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity
-            style={[styles.toggleButton, styles.toggleButtonActive]}
+            style={[
+              styles.toggleButton,
+              activeTab === 'rooms' && styles.toggleButtonActive,
+            ]}
+            onPress={() => setActiveTab('rooms')}
           >
-            <Text style={styles.toggleButtonTextActive}>Room</Text>
+            <Text
+              style={[
+                styles.toggleButtonText,
+                activeTab === 'rooms' && styles.toggleButtonTextActive,
+              ]}
+            >
+              Rooms
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.toggleButton}>
-            <Text style={styles.toggleButtonText}>Devices</Text>
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              activeTab === 'devices' && styles.toggleButtonActive,
+            ]}
+            onPress={() => setActiveTab('devices')}
+          >
+            <Text
+              style={[
+                styles.toggleButtonText,
+                activeTab === 'devices' && styles.toggleButtonTextActive,
+              ]}
+            >
+              Devices
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Device Grid */}
-        <View style={styles.deviceGrid}>
-          <DeviceCard
-            title="Smart Light"
-            icon={Lightbulb}
-            deviceCount={4}
-            activeCount={2}
-          />
-          <DeviceCard
-            title="Smart AC"
-            icon={Wind}
-            deviceCount={2}
-            activeCount={1}
-          />
-          <DeviceCard
-            title="Smart TV"
-            icon={Tv}
-            deviceCount={2}
-            activeCount={1}
-          />
-          <DeviceCard
-            title="Air Purifier"
-            icon={Monitor}
-            deviceCount={2}
-            activeCount={1}
-          />
-        </View>
+        {/* Content based on active tab */}
+        {activeTab === 'rooms' ? (
+          <View style={styles.roomGrid}>
+            <RoomCard title="Living Room" deviceCount={4} icon={Home} />
+            <RoomCard title="Bedroom" deviceCount={3} icon={DoorOpen} />
+            <RoomCard title="Kitchen" deviceCount={2} icon={Home} />
+            <RoomCard title="Bathroom" deviceCount={1} icon={DoorOpen} />
+          </View>
+        ) : (
+          <View style={styles.deviceGrid}>
+            <DeviceCard
+              title="Smart Light"
+              icon={Lightbulb}
+              deviceCount={4}
+              activeCount={2}
+            />
+            <DeviceCard
+              title="Smart AC"
+              icon={Wind}
+              deviceCount={2}
+              activeCount={1}
+            />
+            <DeviceCard
+              title="Smart TV"
+              icon={Tv}
+              deviceCount={2}
+              activeCount={1}
+            />
+            <DeviceCard
+              title="Air Purifier"
+              icon={Monitor}
+              deviceCount={2}
+              activeCount={1}
+            />
+          </View>
+        )}
 
-        {/* Add Device Button */}
+        {/* Add Button */}
         <TouchableOpacity style={styles.addDeviceButton}>
           <Plus size={24} color="#2563eb" />
-          <Text style={styles.addDeviceText}>Add new device</Text>
+          <Text style={styles.addDeviceText}>
+            Add new {activeTab === 'rooms' ? 'room' : 'device'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -270,36 +294,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  statCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: 'white',
-  },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: 'white',
-    opacity: 0.8,
-    textAlign: 'center',
-    marginTop: 2,
-  },
   toggleContainer: {
     flexDirection: 'row',
     marginHorizontal: 20,
@@ -326,6 +320,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: 'white',
+  },
+  roomGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    justifyContent: 'space-between',
   },
   deviceGrid: {
     flexDirection: 'row',

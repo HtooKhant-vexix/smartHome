@@ -6,24 +6,22 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  ChevronLeft,
+  ArrowLeft,
   Lightbulb,
   Wind,
   Tv,
   Monitor,
+  Settings,
   Power,
-  Sun,
-  Moon,
-  Snowflake,
-  Droplets,
-  Fan,
+  Clock,
+  Sliders,
+  Battery,
+  Wifi,
 } from 'lucide-react-native';
-import Slider from '@react-native-community/slider';
 
 const deviceIcons = {
   'smart-light': Lightbulb,
@@ -32,305 +30,152 @@ const deviceIcons = {
   'air-purifier': Monitor,
 };
 
-const deviceNames = {
-  'smart-light': 'Smart Light',
-  'smart-ac': 'Smart AC',
-  'smart-tv': 'Smart TV',
-  'air-purifier': 'Air Purifier',
+interface ControlItemProps {
+  icon: React.ElementType;
+  label: string;
+  value: string | number;
+  unit?: string;
+}
+
+const ControlItem = ({ icon: Icon, label, value, unit }: ControlItemProps) => {
+  return (
+    <View style={styles.controlItem}>
+      <View style={styles.controlIcon}>
+        <Icon size={20} color="#2563eb" />
+      </View>
+      <View style={styles.controlInfo}>
+        <Text style={styles.controlLabel}>{label}</Text>
+        <Text style={styles.controlValue}>
+          {value}
+          {unit && <Text style={styles.controlUnit}> {unit}</Text>}
+        </Text>
+      </View>
+    </View>
+  );
 };
-
-interface BaseDevice {
-  id: string;
-  name: string;
-  isOn: boolean;
-}
-
-interface SmartLight extends BaseDevice {
-  brightness: number;
-}
-
-interface SmartAC extends BaseDevice {
-  temperature: number;
-  mode: 'cool' | 'heat';
-}
-
-interface AirPurifier extends BaseDevice {
-  mode: 'auto' | 'manual';
-}
-
-type Device = SmartLight | SmartAC | AirPurifier | BaseDevice;
-
-const deviceData: Record<string, Device[]> = {
-  'smart-light': [
-    { id: '1', name: 'Living Room Lamp', isOn: true, brightness: 80 },
-    { id: '2', name: 'Kitchen Lamp', isOn: false, brightness: 50 },
-    { id: '3', name: 'Bedroom Lamp', isOn: true, brightness: 30 },
-  ],
-  'smart-ac': [
-    {
-      id: '1',
-      name: 'Living Room AC',
-      isOn: true,
-      temperature: 22,
-      mode: 'cool',
-    },
-    { id: '2', name: 'Bedroom AC', isOn: false, temperature: 24, mode: 'heat' },
-  ],
-  'smart-tv': [
-    { id: '1', name: 'Living Room TV', isOn: true },
-    { id: '2', name: 'Bedroom TV', isOn: false },
-  ],
-  'air-purifier': [
-    { id: '1', name: 'Living Room Purifier', isOn: true, mode: 'auto' },
-    { id: '2', name: 'Bedroom Purifier', isOn: false, mode: 'manual' },
-  ],
-};
-
-function isSmartLight(device: Device): device is SmartLight {
-  return 'brightness' in device;
-}
-
-function isSmartAC(device: Device): device is SmartAC {
-  return 'temperature' in device && 'mode' in device;
-}
-
-function isAirPurifier(device: Device): device is AirPurifier {
-  return 'mode' in device && !('temperature' in device);
-}
 
 export default function DeviceDetailScreen() {
-  const { type, id } = useLocalSearchParams();
   const router = useRouter();
-  const Icon = deviceIcons[type as keyof typeof deviceIcons];
-  const deviceName = deviceNames[type as keyof typeof deviceNames];
+  const { type, id } = useLocalSearchParams();
+  const deviceType = type as string;
+  const deviceId = id as string;
 
-  const devices = deviceData[type as keyof typeof deviceData] || [];
-  const device = devices.find((d) => d.id === id) || devices[0];
+  const deviceTitle = deviceType
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 
-  const [isOn, setIsOn] = useState(device.isOn);
-  const [brightness, setBrightness] = useState(
-    isSmartLight(device) ? device.brightness : 50
-  );
-  const [temperature, setTemperature] = useState(
-    isSmartAC(device) ? device.temperature : 22
-  );
-  const [mode, setMode] = useState(
-    isSmartAC(device)
-      ? device.mode
-      : isAirPurifier(device)
-      ? device.mode
-      : 'cool'
-  );
+  const [isActive, setIsActive] = useState(true);
+  const [brightness, setBrightness] = useState(75);
+  const [temperature, setTemperature] = useState(23);
+  const [batteryLevel, setBatteryLevel] = useState(85);
 
-  const toggleDevice = () => {
-    setIsOn(!isOn);
-  };
-
-  const renderDeviceControls = () => {
-    switch (type) {
-      case 'smart-light':
-        return (
-          <View style={styles.controlSection}>
-            <Text style={styles.sectionTitle}>Brightness</Text>
-            <View style={styles.brightnessControl}>
-              <Moon size={24} color="#94a3b8" />
-              <Slider
-                style={styles.slider}
-                minimumValue={0}
-                maximumValue={100}
-                value={brightness}
-                onValueChange={setBrightness}
-                minimumTrackTintColor="#2563eb"
-                maximumTrackTintColor="#374151"
-                thumbTintColor="#2563eb"
-              />
-              <Sun size={24} color="#94a3b8" />
-            </View>
-          </View>
-        );
-      case 'smart-ac':
-        return (
-          <View style={styles.controlSection}>
-            <Text style={styles.sectionTitle}>Temperature</Text>
-            <View style={styles.temperatureControl}>
-              <Snowflake size={24} color="#94a3b8" />
-              <Slider
-                style={styles.slider}
-                minimumValue={16}
-                maximumValue={30}
-                value={temperature}
-                onValueChange={setTemperature}
-                minimumTrackTintColor="#2563eb"
-                maximumTrackTintColor="#374151"
-                thumbTintColor="#2563eb"
-              />
-              <Droplets size={24} color="#94a3b8" />
-            </View>
-            <Text style={styles.temperatureValue}>{temperature}°C</Text>
-            <View style={styles.modeContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  mode === 'cool' && styles.activeModeButton,
-                ]}
-                onPress={() => setMode('cool')}
-              >
-                <Snowflake
-                  size={20}
-                  color={mode === 'cool' ? 'white' : '#94a3b8'}
-                />
-                <Text
-                  style={[
-                    styles.modeText,
-                    mode === 'cool' && styles.activeModeText,
-                  ]}
-                >
-                  Cool
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  mode === 'heat' && styles.activeModeButton,
-                ]}
-                onPress={() => setMode('heat')}
-              >
-                <Droplets
-                  size={20}
-                  color={mode === 'heat' ? 'white' : '#94a3b8'}
-                />
-                <Text
-                  style={[
-                    styles.modeText,
-                    mode === 'heat' && styles.activeModeText,
-                  ]}
-                >
-                  Heat
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      case 'air-purifier':
-        return (
-          <View style={styles.controlSection}>
-            <View style={styles.modeContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  mode === 'auto' && styles.activeModeButton,
-                ]}
-                onPress={() => setMode('auto')}
-              >
-                <Fan size={20} color={mode === 'auto' ? 'white' : '#94a3b8'} />
-                <Text
-                  style={[
-                    styles.modeText,
-                    mode === 'auto' && styles.activeModeText,
-                  ]}
-                >
-                  Auto
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  mode === 'manual' && styles.activeModeButton,
-                ]}
-                onPress={() => setMode('manual')}
-              >
-                <Fan
-                  size={20}
-                  color={mode === 'manual' ? 'white' : '#94a3b8'}
-                />
-                <Text
-                  style={[
-                    styles.modeText,
-                    mode === 'manual' && styles.activeModeText,
-                  ]}
-                >
-                  Manual
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      default:
-        return null;
-    }
-  };
+  const DeviceIcon =
+    deviceIcons[deviceType as keyof typeof deviceIcons] || Lightbulb;
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <ChevronLeft size={24} color="white" />
+            <ArrowLeft size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.title}>{device.name}</Text>
-          <View style={styles.backButton} />
+          <Text style={styles.deviceTitle}>
+            {deviceTitle} {deviceId}
+          </Text>
+          <TouchableOpacity style={styles.settingsButton}>
+            <Settings size={24} color="#2563eb" />
+          </TouchableOpacity>
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-        >
-          <View style={styles.deviceStatus}>
-            <View style={styles.iconContainer}>
-              <Icon size={32} color="white" />
-            </View>
+        {/* Device Status */}
+        <View style={styles.statusContainer}>
+          <View style={styles.deviceIconContainer}>
+            <DeviceIcon size={40} color="white" />
+          </View>
+          <View style={styles.statusInfo}>
             <Text style={styles.statusText}>
-              {isOn ? 'Device is On' : 'Device is Off'}
+              {isActive ? 'Active' : 'Inactive'}
             </Text>
+            <Text style={styles.lastSeen}>Last seen 2 minutes ago</Text>
           </View>
+          <Switch
+            value={isActive}
+            onValueChange={setIsActive}
+            trackColor={{ false: '#374151', true: '#2563eb' }}
+            thumbColor="white"
+          />
+        </View>
 
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                !isOn && styles.actionButtonDisabled,
-              ]}
-              onPress={toggleDevice}
-            >
-              <Power size={24} color={isOn ? 'white' : '#94a3b8'} />
-              <Text
-                style={[styles.actionText, !isOn && styles.actionTextDisabled]}
-              >
-                {isOn ? 'Turn Off' : 'Turn On'}
-              </Text>
-            </TouchableOpacity>
+        {/* Quick Controls */}
+        <View style={styles.controlsContainer}>
+          <Text style={styles.sectionTitle}>Quick Controls</Text>
+          <View style={styles.controlsGrid}>
+            <ControlItem
+              icon={Power}
+              label="Power"
+              value={isActive ? 'On' : 'Off'}
+            />
+            <ControlItem icon={Clock} label="Uptime" value="2h 30m" />
+            <ControlItem
+              icon={Battery}
+              label="Battery"
+              value={batteryLevel}
+              unit="%"
+            />
+            <ControlItem icon={Wifi} label="Signal" value="Strong" />
           </View>
+        </View>
 
-          {isOn && renderDeviceControls()}
-
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Device Information</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Device Type</Text>
-                <Text style={styles.infoValue}>{deviceName}</Text>
+        {/* Device Settings */}
+        <View style={styles.settingsContainer}>
+          <Text style={styles.sectionTitle}>Device Settings</Text>
+          <View style={styles.settingsList}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Sliders size={20} color="#94a3b8" />
+                <Text style={styles.settingLabel}>Brightness</Text>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Location</Text>
-                <Text style={styles.infoValue}>
-                  {device.name.split(' ')[0]}
-                </Text>
+              <Text style={styles.settingValue}>{brightness}%</Text>
+            </View>
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Wind size={20} color="#94a3b8" />
+                <Text style={styles.settingLabel}>Temperature</Text>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Status</Text>
-                <Text style={styles.infoValue}>
-                  {isOn ? 'Online' : 'Offline'}
-                </Text>
-              </View>
+              <Text style={styles.settingValue}>{temperature}°C</Text>
             </View>
           </View>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        </View>
+
+        {/* Device Info */}
+        <View style={styles.infoContainer}>
+          <Text style={styles.sectionTitle}>Device Information</Text>
+          <View style={styles.infoList}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Device ID</Text>
+              <Text style={styles.infoValue}>{deviceId}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Model</Text>
+              <Text style={styles.infoValue}>Smart Home Pro 2024</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Firmware</Text>
+              <Text style={styles.infoValue}>v2.1.0</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Last Update</Text>
+              <Text style={styles.infoValue}>2 days ago</Text>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -339,161 +184,172 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  safeArea: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 20,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 20,
-    fontFamily: 'Inter-SemiBold',
+  deviceTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
     color: 'white',
   },
-  deviceStatus: {
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 24,
   },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 20,
+    borderRadius: 16,
+  },
+  deviceIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#2563eb',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginRight: 16,
+  },
+  statusInfo: {
+    flex: 1,
   },
   statusText: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: 'white',
+    marginBottom: 4,
   },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  actionButtonDisabled: {
-    backgroundColor: '#1e293b',
-  },
-  actionText: {
-    color: 'white',
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    marginLeft: 8,
-  },
-  actionTextDisabled: {
-    color: '#94a3b8',
-  },
-  controlSection: {
-    backgroundColor: '#1e293b',
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 20,
-    borderRadius: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: 'white',
-    marginBottom: 16,
-  },
-  brightnessControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  temperatureControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  slider: {
-    flex: 1,
-    height: 40,
-    marginHorizontal: 12,
-  },
-  temperatureValue: {
-    fontSize: 24,
-    fontFamily: 'Inter-SemiBold',
-    color: 'white',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  modeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  modeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1e293b',
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginHorizontal: 4,
-  },
-  activeModeButton: {
-    backgroundColor: '#2563eb',
-  },
-  modeText: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#94a3b8',
-    marginLeft: 8,
-  },
-  activeModeText: {
-    color: 'white',
-  },
-  infoSection: {
-    marginHorizontal: 20,
-    marginBottom: 32,
-  },
-  infoCard: {
-    backgroundColor: '#1e293b',
-    padding: 20,
-    borderRadius: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#374151',
-  },
-  infoLabel: {
+  lastSeen: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#94a3b8',
   },
-  infoValue: {
+  controlsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
+    marginBottom: 16,
+  },
+  controlsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -8,
+  },
+  controlItem: {
+    width: '50%',
+    paddingHorizontal: 8,
+    marginBottom: 16,
+  },
+  controlIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  controlInfo: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 12,
+  },
+  controlLabel: {
     fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+    marginBottom: 4,
+  },
+  controlValue: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
+  },
+  controlUnit: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+  },
+  settingsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  settingsList: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: 'white',
+    marginLeft: 12,
+  },
+  settingValue: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#2563eb',
+  },
+  infoContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  infoList: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  infoItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  infoLabel: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
+  },
+  infoValue: {
+    fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: 'white',
   },
