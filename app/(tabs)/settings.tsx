@@ -12,6 +12,8 @@ import {
   Animated,
   Dimensions,
   TextInput,
+  Modal,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -38,11 +40,13 @@ import {
   FileJson,
   FileText,
   Wifi as WifiIcon,
+  Router,
 } from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
 import { CustomAlert } from '../../components/CustomAlert';
 import Paho from 'paho-mqtt';
+import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -101,6 +105,7 @@ function SettingSection({ title, children }: SettingSectionProps) {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const [autoMode, setAutoMode] = useState(false);
@@ -111,9 +116,6 @@ export default function SettingsScreen() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [connectedDevices, setConnectedDevices] = useState<Device[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [dataFormat, setDataFormat] = useState<'json' | 'csv'>('json');
-  const [dataInput, setDataInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
   const [alert, setAlert] = useState<{
     visible: boolean;
     title: string;
@@ -133,8 +135,32 @@ export default function SettingsScreen() {
   const [mqttStatus, setMqttStatus] = useState<
     'disconnected' | 'connecting' | 'connected'
   >('disconnected');
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [wifiConfig, setWifiConfig] = useState({
+    ssid: '',
+    password: '',
+    port: '1883',
+  });
+  const [isSending, setIsSending] = useState(false);
+  const [isBluetoothReady, setIsBluetoothReady] = useState(false);
 
   useEffect(() => {
+    const initializeBluetooth = async () => {
+      try {
+        const hasPermissions = await bluetoothService.requestPermissions();
+        setIsBluetoothReady(hasPermissions);
+        if (hasPermissions) {
+          setConnectedDevices(bluetoothService.getConnectedDevices());
+        }
+      } catch (error) {
+        console.error('Error initializing Bluetooth:', error);
+        showAlert('Error', 'Failed to initialize Bluetooth', 'error');
+      }
+    };
+
+    initializeBluetooth();
+
     return () => {
       bluetoothService.stopScan();
       if (mqttClient.current) {
@@ -144,6 +170,11 @@ export default function SettingsScreen() {
   }, []);
 
   const startScan = async () => {
+    if (!isBluetoothReady) {
+      showAlert('Error', 'Bluetooth is not ready', 'error');
+      return;
+    }
+
     try {
       setIsScanning(true);
       setDevices([]);
@@ -160,7 +191,7 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error('Error starting scan:', error);
       setIsScanning(false);
-      Alert.alert('Error', 'Failed to start scanning');
+      showAlert('Error', 'Failed to start scanning', 'error');
     }
   };
 
@@ -169,17 +200,28 @@ export default function SettingsScreen() {
     try {
       // Clear all connection states
       setConnectingDeviceId(null);
+
+      // Check and reinitialize Bluetooth if needed
+      if (!isBluetoothReady) {
+        const hasPermissions = await bluetoothService.requestPermissions();
+        setIsBluetoothReady(hasPermissions);
+        if (!hasPermissions) {
+          showAlert('Error', 'Bluetooth permissions not granted', 'error');
+          return;
+        }
+      }
+
       // Refresh the device list
       await startScan();
       // Update connected devices list
       setConnectedDevices(bluetoothService.getConnectedDevices());
     } catch (error) {
       console.error('Error refreshing:', error);
-      Alert.alert('Error', 'Failed to refresh devices');
+      showAlert('Error', 'Failed to refresh devices', 'error');
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [isBluetoothReady]);
 
   const showAlert = (
     title: string,
@@ -243,54 +285,6 @@ export default function SettingsScreen() {
       showAlert('Error', 'Failed to disconnect all devices', 'error');
     } finally {
       setConnectingDeviceId(null);
-    }
-  };
-
-  const sendData = async () => {
-    if (connectedDevices.length === 0) {
-      showAlert('Error', 'No devices connected', 'error');
-      return;
-    }
-
-    try {
-      setIsSending(true);
-      let dataToSend = dataInput;
-
-      // Validate and format data based on selected format
-      if (dataFormat === 'json') {
-        try {
-          // Validate JSON
-          JSON.parse(dataInput);
-        } catch (error) {
-          showAlert('Error', 'Invalid JSON format', 'error');
-          setIsSending(false);
-          return;
-        }
-      } else if (dataFormat === 'csv') {
-        // Basic CSV validation
-        if (!dataInput.includes(',')) {
-          showAlert(
-            'Error',
-            'Invalid CSV format. Data should be comma-separated',
-            'error'
-          );
-          setIsSending(false);
-          return;
-        }
-      }
-
-      // Send data to all connected devices
-      for (const device of connectedDevices) {
-        await bluetoothService.sendData(device.id, dataToSend);
-      }
-
-      showAlert('Success', 'Data sent successfully', 'success');
-      setDataInput('');
-    } catch (error) {
-      console.error('Error sending data:', error);
-      showAlert('Error', 'Failed to send data', 'error');
-    } finally {
-      setIsSending(false);
     }
   };
 
@@ -373,6 +367,53 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleDevicePress = (device: Device) => {
+    console.log('Device pressed:', device.id);
+    setSelectedDevice(device);
+    setIsModalVisible(true);
+  };
+
+  const sendWifiConfig = async () => {
+    if (!selectedDevice) {
+      showAlert('Error', 'No device selected', 'error');
+      return;
+    }
+
+    try {
+      setIsSending(true);
+
+      // Format the WiFi configuration data
+      const wifiConfigData = {
+        wifiConfig: {
+          ssid: wifiConfig.ssid,
+          password: wifiConfig.password,
+          port: parseInt(wifiConfig.port),
+        },
+      };
+
+      // Convert to JSON string
+      const jsonData = JSON.stringify(wifiConfigData);
+
+      // Send the data
+      const success = await bluetoothService.sendData(
+        selectedDevice.id,
+        jsonData
+      );
+
+      if (success) {
+        showAlert('Success', 'WiFi configuration sent successfully', 'success');
+        setIsModalVisible(false);
+      } else {
+        showAlert('Error', 'Failed to send WiFi configuration', 'error');
+      }
+    } catch (error) {
+      console.error('Error sending WiFi config:', error);
+      showAlert('Error', 'Failed to send WiFi configuration', 'error');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -393,6 +434,24 @@ export default function SettingsScreen() {
             Customize your smart home experience
           </Text>
         </View>
+
+        {/* Device Setup Section */}
+        <SettingSection title="Device Setup">
+          <SettingItem
+            icon={<Wifi size={24} color="#2563eb" />}
+            title="WiFi Configuration"
+            subtitle="Configure WiFi for ESP32 devices"
+            onPress={() => router.push('/(tabs)/wifi-setup')}
+          />
+          <SettingItem
+            icon={<Bluetooth size={24} color="#2563eb" />}
+            title="Bluetooth Devices"
+            subtitle={`${connectedDevices.length} device${
+              connectedDevices.length !== 1 ? 's' : ''
+            } connected`}
+            onPress={() => {}}
+          />
+        </SettingSection>
 
         {/* Bluetooth Section */}
         <SettingSection title="Bluetooth">
@@ -453,7 +512,12 @@ export default function SettingsScreen() {
               <View style={styles.connectedDevices}>
                 <Text style={styles.sectionSubtitle}>Connected Devices</Text>
                 {connectedDevices.map((device) => (
-                  <View key={device.id} style={styles.connectedDeviceInfo}>
+                  <TouchableOpacity
+                    key={device.id}
+                    style={styles.connectedDeviceInfo}
+                    onPress={() => handleDevicePress(device)}
+                    activeOpacity={0.7}
+                  >
                     <View
                       style={[styles.deviceIcon, styles.connectedDeviceIcon]}
                     >
@@ -471,7 +535,10 @@ export default function SettingsScreen() {
                         connectingDeviceId === device.id &&
                           styles.disconnectButtonActive,
                       ]}
-                      onPress={() => disconnectDevice(device.id)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        disconnectDevice(device.id);
+                      }}
                       disabled={connectingDeviceId === device.id}
                     >
                       {connectingDeviceId === device.id ? (
@@ -480,7 +547,7 @@ export default function SettingsScreen() {
                         <X size={20} color="#ef4444" />
                       )}
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             ) : (
@@ -564,85 +631,6 @@ export default function SettingsScreen() {
               </View>
             )}
         </SettingSection>
-
-        {/* Data Transfer Section */}
-        {connectedDevices.length > 0 && (
-          <SettingSection title="Data Transfer">
-            <View style={styles.dataTransferCard}>
-              <View style={styles.formatSelector}>
-                <TouchableOpacity
-                  style={[
-                    styles.formatButton,
-                    dataFormat === 'json' && styles.formatButtonActive,
-                  ]}
-                  onPress={() => setDataFormat('json')}
-                >
-                  <FileJson
-                    size={20}
-                    color={dataFormat === 'json' ? '#f8fafc' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.formatButtonText,
-                      dataFormat === 'json' && styles.formatButtonTextActive,
-                    ]}
-                  >
-                    JSON
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.formatButton,
-                    dataFormat === 'csv' && styles.formatButtonActive,
-                  ]}
-                  onPress={() => setDataFormat('csv')}
-                >
-                  <FileText
-                    size={20}
-                    color={dataFormat === 'csv' ? '#f8fafc' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.formatButtonText,
-                      dataFormat === 'csv' && styles.formatButtonTextActive,
-                    ]}
-                  >
-                    CSV
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={styles.dataInput}
-                multiline
-                numberOfLines={4}
-                placeholder={`Enter ${dataFormat.toUpperCase()} data...`}
-                placeholderTextColor="#64748b"
-                value={dataInput}
-                onChangeText={setDataInput}
-                textAlignVertical="top"
-              />
-
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  isSending && styles.sendButtonActive,
-                ]}
-                onPress={sendData}
-                disabled={isSending || !dataInput.trim()}
-              >
-                {isSending ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <>
-                    <Send size={20} color="#ffffff" />
-                    <Text style={styles.sendButtonText}>Send Data</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </SettingSection>
-        )}
 
         {/* MQTT Section */}
         <SettingSection title="MQTT Connection">
@@ -863,6 +851,118 @@ export default function SettingsScreen() {
           {/* <Text style={styles.appCredit}>Designed by Saurabh Dubey</Text> */}
         </View>
       </ScrollView>
+
+      {/* WiFi Config Modal */}
+      <Modal
+        visible={isModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setIsModalVisible(false);
+          Keyboard.dismiss();
+        }}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
+                <WifiIcon
+                  size={24}
+                  color="#2563eb"
+                  style={styles.modalTitleIcon}
+                />
+                <Text style={styles.modalTitle}>WiFi Configuration</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsModalVisible(false);
+                  Keyboard.dismiss();
+                }}
+                style={styles.closeButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={24} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>WiFi SSID</Text>
+                <View style={styles.inputContainer}>
+                  <WifiIcon
+                    size={20}
+                    color="#64748b"
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    value={wifiConfig.ssid}
+                    onChangeText={(text) =>
+                      setWifiConfig((prev) => ({ ...prev, ssid: text }))
+                    }
+                    placeholder="Enter WiFi name"
+                    placeholderTextColor="#64748b"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.inputContainer}>
+                  <Lock size={20} color="#64748b" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={wifiConfig.password}
+                    onChangeText={(text) =>
+                      setWifiConfig((prev) => ({ ...prev, password: text }))
+                    }
+                    placeholder="Enter WiFi password"
+                    placeholderTextColor="#64748b"
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Port</Text>
+                <View style={styles.inputContainer}>
+                  <Globe size={20} color="#64748b" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={wifiConfig.port}
+                    onChangeText={(text) =>
+                      setWifiConfig((prev) => ({ ...prev, port: text }))
+                    }
+                    placeholder="Enter port number"
+                    placeholderTextColor="#64748b"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  (isSending || !wifiConfig.ssid || !wifiConfig.password) &&
+                    styles.buttonDisabled,
+                ]}
+                onPress={sendWifiConfig}
+                disabled={isSending || !wifiConfig.ssid || !wifiConfig.password}
+              >
+                {isSending ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <Send size={20} color="#ffffff" style={styles.buttonIcon} />
+                    <Text style={styles.buttonText}>Send Configuration</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <CustomAlert
         visible={alert.visible}
@@ -1288,5 +1388,99 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#1e293b',
     borderRadius: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#2563eb30',
+    height: '65%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2563eb30',
+  },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  modalTitleIcon: {
+    marginRight: 12,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter-SemiBold',
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#0f172a',
+  },
+  modalBody: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
+    marginBottom: 12,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2563eb30',
+    paddingHorizontal: 16,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    height: 56,
+    fontSize: 16,
+    color: '#fff',
+    fontFamily: 'Inter-Regular',
+  },
+  button: {
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 24,
+    height: 56,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 12,
+  },
+  buttonDisabled: {
+    backgroundColor: '#1e40af',
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
   },
 });
