@@ -9,6 +9,7 @@ import {
   ScrollView,
   Platform,
   PermissionsAndroid,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -39,6 +40,7 @@ export default function WifiSetupScreen() {
     null
   );
   const [isSending, setIsSending] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [alert, setAlert] = useState<{
     visible: boolean;
     title: string;
@@ -262,9 +264,34 @@ export default function WifiSetupScreen() {
     setAlert((prev) => ({ ...prev, visible: false }));
   };
 
+  const onRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      // Update connected devices list
+      setConnectedDevices(bluetoothService.getConnectedDevices());
+      // Start a new scan
+      await startScan();
+    } catch (error) {
+      console.error('Error refreshing:', error);
+      showAlert('Error', 'Failed to refresh devices', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            colors={['#2563eb']}
+            tintColor="#2563eb"
+          />
+        }
+      >
         <View style={styles.header}>
           <Text style={styles.title}>WiFi Setup</Text>
           <Text style={styles.subtitle}>Connect your ESP32 device to WiFi</Text>
@@ -333,10 +360,26 @@ export default function WifiSetupScreen() {
           <View style={styles.deviceSection}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Connected Devices</Text>
-              <Text style={styles.connectedCount}>
-                {connectedDevices.length} device
-                {connectedDevices.length !== 1 ? 's' : ''}
-              </Text>
+              <View style={styles.headerRight}>
+                <Text style={styles.connectedCount}>
+                  {connectedDevices.length} device
+                  {connectedDevices.length !== 1 ? 's' : ''}
+                </Text>
+                {/* <TouchableOpacity
+                  style={[
+                    styles.refreshButton,
+                    isRefreshing && styles.refreshButtonActive,
+                  ]}
+                  onPress={onRefresh}
+                  disabled={isRefreshing}
+                >
+                  {isRefreshing ? (
+                    <ActivityIndicator color="#2563eb" />
+                  ) : (
+                    <RefreshCw size={20} color="#2563eb" />
+                  )}
+                </TouchableOpacity> */}
+              </View>
             </View>
             <View style={styles.connectedDevices}>
               {connectedDevices.map((device) => (
@@ -462,31 +505,6 @@ export default function WifiSetupScreen() {
             </View>
           )}
         </View>
-
-        {/* Send Button */}
-        {/* <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (connectedDevices.length === 0 ||
-              !ssid ||
-              !password ||
-              isSending) &&
-              styles.sendButtonDisabled,
-          ]}
-          onPress={() => {}}
-          disabled={
-            connectedDevices.length === 0 || !ssid || !password || isSending
-          }
-        >
-          {isSending ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Send size={20} color="#ffffff" style={styles.buttonIcon} />
-              <Text style={styles.buttonText}>Send Configuration</Text>
-            </>
-          )}
-        </TouchableOpacity> */}
       </ScrollView>
 
       <CustomAlert
@@ -702,5 +720,18 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginTop: 16,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  refreshButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+  },
+  refreshButtonActive: {
+    backgroundColor: '#1e40af',
   },
 });
