@@ -6,25 +6,38 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   ScrollView,
   Platform,
   PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Wifi, Lock, Send, RefreshCw } from 'lucide-react-native';
+import {
+  Wifi,
+  Lock,
+  Send,
+  RefreshCw,
+  X,
+  Bluetooth,
+  BluetoothConnected,
+  Eye,
+  EyeOff,
+} from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
-import { Buffer } from 'buffer';
 import NetInfo from '@react-native-community/netinfo';
 import { CustomAlert } from '../../components/CustomAlert';
 
 export default function WifiSetupScreen() {
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
+  const [port, setPort] = useState('1883');
+  const [showPassword, setShowPassword] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [connectedDevices, setConnectedDevices] = useState<Device[]>([]);
+  const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(
+    null
+  );
   const [isSending, setIsSending] = useState(false);
   const [alert, setAlert] = useState<{
     visible: boolean;
@@ -45,14 +58,11 @@ export default function WifiSetupScreen() {
         if (Platform.OS === 'android') {
           const permissions = [
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            PermissionsAndroid.PERMISSIONS.ACCESS_WIFI_STATE,
           ];
 
-          if (Platform.Version >= 31) {
-            permissions.push(
-              PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
-            );
+          if (Number(Platform.Version) >= 31) {
+            permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+            permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
           }
 
           const results = await PermissionsAndroid.requestMultiple(permissions);
@@ -79,6 +89,9 @@ export default function WifiSetupScreen() {
           return;
         }
 
+        // Update connected devices list
+        setConnectedDevices(bluetoothService.getConnectedDevices());
+
         // Start scanning for devices
         startScan();
       } catch (error) {
@@ -88,6 +101,10 @@ export default function WifiSetupScreen() {
     };
 
     initialize();
+
+    return () => {
+      bluetoothService.stopScan();
+    };
   }, []);
 
   const startScan = async () => {
@@ -115,9 +132,10 @@ export default function WifiSetupScreen() {
 
   const connectToDevice = async (device: Device) => {
     try {
+      setConnectingDeviceId(device.id);
       const connected = await bluetoothService.connectToDevice(device.id);
       if (connected) {
-        setSelectedDevice(device);
+        setConnectedDevices(bluetoothService.getConnectedDevices());
         showAlert('Success', 'Device connected successfully', 'success');
       } else {
         showAlert('Error', 'Failed to connect to device', 'error');
@@ -125,15 +143,28 @@ export default function WifiSetupScreen() {
     } catch (error) {
       console.error('Error connecting to device:', error);
       showAlert('Error', 'Failed to connect to device', 'error');
+    } finally {
+      setConnectingDeviceId(null);
     }
   };
 
-  const sendWifiCredentials = async () => {
-    if (!selectedDevice) {
-      showAlert('Error', 'No device selected', 'error');
-      return;
+  const disconnectDevice = async (deviceId: string) => {
+    try {
+      setConnectingDeviceId(deviceId);
+      await bluetoothService.disconnectDevice(deviceId);
+      setConnectedDevices((prev) =>
+        prev.filter((device) => device.id !== deviceId)
+      );
+      showAlert('Success', 'Device disconnected successfully', 'success');
+    } catch (error) {
+      console.error('Error disconnecting device:', error);
+      showAlert('Error', 'Failed to disconnect device', 'error');
+    } finally {
+      setConnectingDeviceId(null);
     }
+  };
 
+  const sendWifiCredentials = async (deviceId?: string) => {
     if (!ssid || !password) {
       showAlert('Error', 'Please enter both SSID and password', 'error');
       return;
@@ -147,22 +178,64 @@ export default function WifiSetupScreen() {
         wifiConfig: {
           ssid: ssid,
           password: password,
+          port: parseInt(port) || 1883,
         },
       };
 
       // Convert to JSON string
       const jsonData = JSON.stringify(wifiConfigData);
 
-      // Send the data
-      const success = await bluetoothService.sendData(
-        selectedDevice.id,
-        jsonData
-      );
-
-      if (success) {
-        showAlert('Success', 'WiFi configuration sent successfully', 'success');
+      // If deviceId is provided, send to that specific device
+      if (deviceId) {
+        const success = await bluetoothService.sendData(deviceId, jsonData);
+        if (success) {
+          showAlert(
+            'Success',
+            'WiFi configuration sent successfully',
+            'success'
+          );
+        } else {
+          showAlert('Error', 'Failed to send WiFi configuration', 'error');
+        }
       } else {
-        showAlert('Error', 'Failed to send WiFi configuration', 'error');
+        // Send to all connected devices
+        const results = await Promise.all(
+          connectedDevices.map(async (device) => {
+            try {
+              const success = await bluetoothService.sendData(
+                device.id,
+                jsonData
+              );
+              return { deviceId: device.id, success };
+            } catch (error) {
+              console.error(`Error sending to device ${device.id}:`, error);
+              return { deviceId: device.id, success: false };
+            }
+          })
+        );
+
+        const successfulSends = results.filter(
+          (result) => result.success
+        ).length;
+        if (successfulSends === connectedDevices.length) {
+          showAlert(
+            'Success',
+            'WiFi configuration sent to all devices successfully',
+            'success'
+          );
+        } else if (successfulSends > 0) {
+          showAlert(
+            'Partial Success',
+            `WiFi configuration sent to ${successfulSends} out of ${connectedDevices.length} devices`,
+            'info'
+          );
+        } else {
+          showAlert(
+            'Error',
+            'Failed to send WiFi configuration to any device',
+            'error'
+          );
+        }
       }
     } catch (error) {
       console.error('Error sending WiFi config:', error);
@@ -224,15 +297,117 @@ export default function WifiSetupScreen() {
                 onChangeText={setPassword}
                 placeholder="Enter WiFi password"
                 placeholderTextColor="#64748b"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.passwordToggle}
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color="#64748b" />
+                ) : (
+                  <Eye size={20} color="#64748b" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Port</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={port}
+                onChangeText={setPort}
+                placeholder="Enter port number"
+                placeholderTextColor="#64748b"
+                keyboardType="numeric"
               />
             </View>
           </View>
         </View>
 
-        {/* Device Selection */}
-        <View style={styles.deviceSection}>
+        {/* Connected Devices */}
+        {connectedDevices.length > 0 && (
+          <View style={styles.deviceSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Connected Devices</Text>
+              <Text style={styles.connectedCount}>
+                {connectedDevices.length} device
+                {connectedDevices.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <View style={styles.connectedDevices}>
+              {connectedDevices.map((device) => (
+                <View key={device.id} style={styles.connectedDeviceInfo}>
+                  <View style={styles.deviceIcon}>
+                    <BluetoothConnected size={24} color="#22c55e" />
+                  </View>
+                  <View style={styles.deviceDetails}>
+                    <Text style={styles.deviceName}>
+                      {device.name || 'Unknown Device'}
+                    </Text>
+                    <Text style={styles.deviceId}>{device.id}</Text>
+                  </View>
+                  <View style={styles.deviceActions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sendButton,
+                        (!ssid || !password || isSending) &&
+                          styles.sendButtonDisabled,
+                      ]}
+                      onPress={() => sendWifiCredentials(device.id)}
+                      disabled={!ssid || !password || isSending}
+                    >
+                      {isSending ? (
+                        <ActivityIndicator color="#ffffff" />
+                      ) : (
+                        <Send size={20} color="#ffffff" />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.disconnectButton,
+                        connectingDeviceId === device.id &&
+                          styles.disconnectButtonActive,
+                      ]}
+                      onPress={() => disconnectDevice(device.id)}
+                      disabled={connectingDeviceId === device.id}
+                    >
+                      {connectingDeviceId === device.id ? (
+                        <ActivityIndicator color="#ffffff" />
+                      ) : (
+                        <X size={20} color="#ef4444" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+            {/* Send to All Button */}
+            <TouchableOpacity
+              style={[
+                styles.sendToAllButton,
+                (!ssid || !password || isSending) && styles.sendButtonDisabled,
+              ]}
+              onPress={() => sendWifiCredentials()}
+              disabled={!ssid || !password || isSending}
+            >
+              {isSending ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Send size={20} color="#ffffff" style={styles.buttonIcon} />
+                  <Text style={styles.buttonText}>Send to All Devices</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Available Devices */}
+        <View style={styles.deviceSection1}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Available Devices</Text>
             <TouchableOpacity
@@ -255,12 +430,14 @@ export default function WifiSetupScreen() {
                   key={device.id}
                   style={[
                     styles.deviceItem,
-                    selectedDevice?.id === device.id && styles.selectedDevice,
+                    connectingDeviceId === device.id &&
+                      styles.deviceItemDisabled,
                   ]}
                   onPress={() => connectToDevice(device)}
+                  disabled={connectingDeviceId === device.id}
                 >
                   <View style={styles.deviceIcon}>
-                    <Wifi size={24} color="#2563eb" />
+                    <Bluetooth size={24} color="#2563eb" />
                   </View>
                   <View style={styles.deviceInfo}>
                     <Text style={styles.deviceName}>
@@ -268,6 +445,11 @@ export default function WifiSetupScreen() {
                     </Text>
                     <Text style={styles.deviceId}>{device.id}</Text>
                   </View>
+                  {connectingDeviceId === device.id ? (
+                    <ActivityIndicator color="#2563eb" />
+                  ) : (
+                    <Bluetooth size={24} color="#2563eb" />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -282,14 +464,19 @@ export default function WifiSetupScreen() {
         </View>
 
         {/* Send Button */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[
             styles.sendButton,
-            (!selectedDevice || !ssid || !password || isSending) &&
+            (connectedDevices.length === 0 ||
+              !ssid ||
+              !password ||
+              isSending) &&
               styles.sendButtonDisabled,
           ]}
-          onPress={sendWifiCredentials}
-          disabled={!selectedDevice || !ssid || !password || isSending}
+          onPress={() => {}}
+          disabled={
+            connectedDevices.length === 0 || !ssid || !password || isSending
+          }
         >
           {isSending ? (
             <ActivityIndicator color="#ffffff" />
@@ -299,7 +486,7 @@ export default function WifiSetupScreen() {
               <Text style={styles.buttonText}>Send Configuration</Text>
             </>
           )}
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </ScrollView>
 
       <CustomAlert
@@ -317,6 +504,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    paddingBottom: 80,
   },
   scrollView: {
     flex: 1,
@@ -368,6 +556,10 @@ const styles = StyleSheet.create({
   deviceSection: {
     padding: 20,
   },
+  deviceSection1: {
+    padding: 20,
+    paddingBottom: 40,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -378,6 +570,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#f8fafc',
+    marginBottom: 16,
   },
   scanButton: {
     backgroundColor: '#2563eb',
@@ -396,17 +589,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'transparent',
   },
-  selectedDevice: {
-    borderColor: '#2563eb',
+  deviceItemDisabled: {
+    opacity: 0.5,
   },
   deviceIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#0f172a',
+    // backgroundColor: '#064e3b',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -418,11 +609,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#f8fafc',
+    marginBottom: 4,
   },
   deviceId: {
     fontSize: 12,
     color: '#94a3b8',
-    marginTop: 4,
   },
   noDevices: {
     padding: 32,
@@ -442,24 +633,74 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sendButton: {
-    flexDirection: 'row',
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#2563eb',
+    minWidth: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563eb',
-    margin: 20,
-    padding: 16,
-    borderRadius: 16,
-    height: 56,
   },
   sendButtonDisabled: {
     opacity: 0.5,
   },
   buttonIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   buttonText: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
+  },
+  connectedDevices: {
+    gap: 12,
+  },
+  connectedDeviceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#2563eb30',
+  },
+  deviceDetails: {
+    flex: 1,
+  },
+  disconnectButton: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+    minWidth: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  disconnectButtonActive: {
+    backgroundColor: '#7f1d1d',
+  },
+  deviceActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  passwordToggle: {
+    padding: 8,
+    marginRight: -8,
+  },
+  connectedCount: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+  sendToAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
   },
 });
