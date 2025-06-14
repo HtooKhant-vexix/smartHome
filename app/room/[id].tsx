@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
 import { deviceIcons, DeviceType } from '../../constants/defaultData';
 import { useRooms } from '../context/RoomContext';
+import AddDeviceModal from '../components/AddDeviceModal';
 
 export default function RoomDetailScreen() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function RoomDetailScreen() {
   const roomId = id as string;
   const { rooms } = useRooms();
   const room = rooms.find((r) => r.id === roomId);
+  const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
 
   if (!room) {
     return null;
@@ -87,7 +89,10 @@ export default function RoomDetailScreen() {
         <View style={styles.devicesContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Devices</Text>
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => setIsAddDeviceModalVisible(true)}
+            >
               <Plus size={20} color="#2563eb" />
               <Text style={styles.addButtonText}>Add Device</Text>
             </TouchableOpacity>
@@ -129,6 +134,12 @@ export default function RoomDetailScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <AddDeviceModal
+        visible={isAddDeviceModalVisible}
+        onClose={() => setIsAddDeviceModalVisible(false)}
+        roomId={roomId}
+      />
     </SafeAreaView>
   );
 }

@@ -19,7 +19,30 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to use bluetooth"
+        }
+      ],
+      [
+        "react-native-permissions",
+        {
+          "iosPermissions": [
+            "BLUETOOTH_PERIPHERAL",
+            "BLUETOOTH_SCAN",
+            "BLUETOOTH_CONNECT"
+          ],
+          "androidPermissions": [
+            "android.permission.BLUETOOTH_SCAN",
+            "android.permission.BLUETOOTH_CONNECT",
+            "android.permission.BLUETOOTH_ADVERTISE"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

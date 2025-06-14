@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,51 +12,71 @@ import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
 import {
   deviceIcons,
-  defaultRoomData,
   getDeviceTitle,
   DeviceType,
-  Room,
   Device,
 } from '../../constants/defaultData';
+import { useRooms } from '../context/RoomContext';
+import AddDeviceModal from '../components/AddDeviceModal';
+import RoomSelectionModal from '../components/RoomSelectionModal';
 
 export default function DeviceListScreen() {
   const router = useRouter();
   const { type } = useLocalSearchParams();
   const deviceType = type as DeviceType;
   const deviceTitle = getDeviceTitle(deviceType);
-
-  const [rooms, setRooms] =
-    React.useState<Record<string, Room>>(defaultRoomData);
+  const { rooms, updateRoom } = useRooms();
+  const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
+  const [isRoomSelectionModalVisible, setIsRoomSelectionModalVisible] =
+    useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<string>('');
 
   const toggleDevice = (roomId: string, deviceId: string) => {
-    setRooms((prevRooms) => {
-      const newRooms = { ...prevRooms };
-      const room = newRooms[roomId];
-      const devices = room?.devices[deviceType] || [];
-
-      const updatedDevices = devices?.map((device: Device) =>
+    const room = rooms.find((r) => r.id === roomId);
+    if (room) {
+      const devices = room.devices[deviceType] || [];
+      const updatedDevices = devices.map((device) =>
         device.id === deviceId
           ? { ...device, isActive: !device.isActive }
           : device
       );
 
-      room.devices[deviceType] = updatedDevices;
-      return newRooms;
-    });
+      const updatedRoomDevices = {
+        ...room.devices,
+        [deviceType]: updatedDevices,
+      };
+
+      updateRoom(roomId, { devices: updatedRoomDevices });
+    }
   };
 
   const DeviceIcon = deviceIcons[deviceType];
 
   // Calculate total devices and active devices
-  const totalDevices = Object.values(rooms).reduce((total, room) => {
+  const totalDevices = rooms.reduce((total, room) => {
     const devices = room.devices[deviceType] || [];
     return total + devices.length;
   }, 0);
 
-  const activeDevices = Object.values(rooms).reduce((total, room) => {
+  const activeDevices = rooms.reduce((total, room) => {
     const devices = room.devices[deviceType] || [];
-    return total + devices.filter((device: Device) => device.isActive).length;
+    return total + devices.filter((device) => device.isActive).length;
   }, 0);
+
+  const handleAddDevice = (roomId: string) => {
+    setSelectedRoomId(roomId);
+    setIsAddDeviceModalVisible(true);
+  };
+
+  const handleAddDevicePress = () => {
+    if (rooms.length === 1) {
+      // If there's only one room, select it automatically
+      handleAddDevice(rooms[0].id);
+    } else {
+      // Show room selection modal for multiple rooms
+      setIsRoomSelectionModalVisible(true);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -91,27 +111,30 @@ export default function DeviceListScreen() {
         <View style={styles.devicesContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Devices by Room</Text>
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={handleAddDevicePress}
+            >
               <Plus size={20} color="#2563eb" />
               <Text style={styles.addButtonText}>Add Device</Text>
             </TouchableOpacity>
           </View>
 
-          {Object.entries(rooms).map(([roomId, room]) => {
+          {rooms.map((room) => {
             const devices = room.devices[deviceType] || [];
             if (devices.length === 0) return null;
 
             return (
-              <View key={roomId} style={styles.roomSection}>
+              <View key={room.id} style={styles.roomSection}>
                 <TouchableOpacity
                   style={styles.roomHeader}
-                  onPress={() => router.push(`/room/${roomId}`)}
+                  onPress={() => router.push(`/room/${room.id}`)}
                 >
                   <Text style={styles.roomTitle}>{room.name}</Text>
                   <ChevronRight size={20} color="#94a3b8" />
                 </TouchableOpacity>
 
-                {devices.map((device: Device) => (
+                {devices.map((device) => (
                   <TouchableOpacity
                     key={device.id}
                     onPress={() =>
@@ -125,7 +148,7 @@ export default function DeviceListScreen() {
                       title={device.name}
                       icon={DeviceIcon}
                       isActive={device.isActive}
-                      onToggle={() => toggleDevice(roomId, device.id)}
+                      onToggle={() => toggleDevice(room.id, device.id)}
                     />
                   </TouchableOpacity>
                 ))}
@@ -134,6 +157,21 @@ export default function DeviceListScreen() {
           })}
         </View>
       </ScrollView>
+
+      <AddDeviceModal
+        visible={isAddDeviceModalVisible}
+        onClose={() => {
+          setIsAddDeviceModalVisible(false);
+          setSelectedRoomId('');
+        }}
+        roomId={selectedRoomId}
+      />
+
+      <RoomSelectionModal
+        visible={isRoomSelectionModalVisible}
+        onClose={() => setIsRoomSelectionModalVisible(false)}
+        onSelectRoom={handleAddDevice}
+      />
     </SafeAreaView>
   );
 }
