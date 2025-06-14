@@ -263,82 +263,46 @@ class BluetoothService {
     try {
       const { serviceUUID, characteristicUUID } = writeChar;
 
-      // Format the data to match the exact required structure
-      let jsonData: string;
+      // Format the data as a JSON object
+      let jsonData: WifiConfigData;
       if (typeof data === 'object') {
         if ('wifiConfig' in data) {
-          jsonData = JSON.stringify(data);
+          jsonData = data as WifiConfigData;
         } else {
           const wifiConfig = data as WifiConfig;
-          jsonData = JSON.stringify({
+          jsonData = {
             wifiConfig: {
               ssid: wifiConfig.ssid,
               password: wifiConfig.password,
               port: wifiConfig.port || 1883,
             },
-          });
+          };
         }
       } else {
-        // If it's a string, use it directly
-        jsonData = data;
+        // If it's a string, parse it as JSON
+        jsonData = JSON.parse(data);
       }
 
-      console.log('Sending raw JSON:', jsonData);
-      console.log('Using service UUID:', serviceUUID);
-      console.log('Using characteristic UUID:', characteristicUUID);
+      console.log('Sending JSON object:', jsonData);
 
-      // Split data into chunks based on MTU size (23 bytes - 3 bytes for overhead)
-      const CHUNK_SIZE = 20;
-      const chunks = [];
-      for (let i = 0; i < jsonData.length; i += CHUNK_SIZE) {
-        chunks.push(jsonData.slice(i, i + CHUNK_SIZE));
-      }
+      // Convert to string and encode for BLE transmission
+      const jsonString = JSON.stringify(jsonData);
+      const encodedData = Buffer.from(jsonString).toString('base64');
+      console.log('Encoded data:', encodedData);
 
-      console.log(`Sending ${chunks.length} chunks of data`);
-
-      // Send each chunk
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        console.log(`Sending chunk ${i + 1}/${chunks.length}:`, chunk);
-
-        try {
-          // Try without response first
-          await device.writeCharacteristicWithoutResponseForService(
-            serviceUUID,
-            characteristicUUID,
-            chunk
-          );
-        } catch (writeError) {
-          console.log('Write without response failed, trying with response...');
-          // Fall back to write with response
-          await device.writeCharacteristicWithResponseForService(
-            serviceUUID,
-            characteristicUUID,
-            chunk
-          );
-        }
-
-        // Add a small delay between chunks
-        if (i < chunks.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      }
-
-      // Send a final newline to indicate end of transmission
+      // Send the encoded data
       try {
-        await device.writeCharacteristicWithoutResponseForService(
+        await device.writeCharacteristicWithResponseForService(
           serviceUUID,
           characteristicUUID,
-          '\n'
+          encodedData
         );
+        console.log('Data sent successfully');
+        return true;
       } catch (error) {
-        console.log(
-          'Failed to send final newline, but message might be complete'
-        );
+        console.error('Failed to send data:', error);
+        return false;
       }
-
-      console.log('Data sent successfully');
-      return true;
     } catch (error) {
       console.error('Failed to send data:', error);
       return false;
