@@ -96,7 +96,11 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({
                 updatedDevices[device.type]?.push({
                   id: device.id,
                   name: device.name,
-                  isActive: device.status === 'active',
+                  // Set specific devices to active for demonstration
+                  isActive:
+                    device.name.toLowerCase().includes('main') ||
+                    device.name.toLowerCase().includes('primary') ||
+                    device.name.toLowerCase().includes('living room'),
                 });
               }
             });
