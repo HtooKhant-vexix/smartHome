@@ -103,6 +103,7 @@ export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
   const [isAddRoomModalVisible, setIsAddRoomModalVisible] = useState(false);
   const { rooms } = useRooms();
+  const router = useRouter();
 
   console.log(rooms, rooms.length, '...................');
 
@@ -242,6 +243,8 @@ export default function HomeScreen() {
           onPress={() => {
             if (activeTab === 'rooms') {
               setIsAddRoomModalVisible(true);
+            } else {
+              router.push('/device-setup');
             }
           }}
         >

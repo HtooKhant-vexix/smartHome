@@ -26,12 +26,19 @@ const RoomContext = createContext<RoomContextType | undefined>(undefined);
 export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  // Initialize rooms with proper structure
+  // Initialize rooms with proper structure and unique icons
   const [rooms, setRooms] = useState<Room[]>(() => {
+    const roomIcons: Record<string, string> = {
+      'living-room': 'Sofa',
+      bedroom: 'BedDouble',
+      kitchen: 'Utensils',
+      bathroom: 'Bath',
+    };
+
     return Object.entries(defaultRoomData).map(([id, room]) => ({
       id,
       name: room.name,
-      icon: 'Home',
+      icon: roomIcons[id] || 'Home',
       devices: room.devices || {},
     }));
   });

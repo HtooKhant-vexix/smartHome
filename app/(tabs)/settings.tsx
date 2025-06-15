@@ -441,7 +441,7 @@ export default function SettingsScreen() {
             icon={<Wifi size={24} color="#2563eb" />}
             title="WiFi Configuration"
             subtitle="Configure WiFi for ESP32 devices"
-            onPress={() => router.push('/(tabs)/wifi-setup')}
+            onPress={() => router.push('/wifi-setup')}
           />
           <SettingItem
             icon={<Bluetooth size={24} color="#2563eb" />}

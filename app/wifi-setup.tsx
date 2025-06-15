@@ -23,10 +23,10 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react-native';
-import { bluetoothService } from '../../services/bluetooth';
+import { bluetoothService } from '../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
 import NetInfo from '@react-native-community/netinfo';
-import { CustomAlert } from '../../components/CustomAlert';
+import { CustomAlert } from '../components/CustomAlert';
 
 export default function WifiSetupScreen() {
   const [ssid, setSsid] = useState('');
