@@ -40,10 +40,24 @@ const DEVICE_TYPES: { type: DeviceType; name: string }[] = [
   { type: 'air-purifier', name: 'Air Purifier' },
 ];
 
+interface ConfiguredDevice {
+  id: string;
+  name: string;
+  type: DeviceType;
+  roomId: string;
+  wifiConfig: {
+    ssid: string;
+    password: string;
+    port: number;
+  };
+  lastConnected: string;
+  status: string;
+}
+
 export default function DeviceSetupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { rooms, updateRoom } = useRooms();
+  const { rooms, updateRoom, loadConfiguredDevices } = useRooms();
   const [step, setStep] = useState<'device-info' | 'wifi-setup'>('device-info');
   const [name, setName] = useState('');
   const [selectedType, setSelectedType] = useState<DeviceType>('smart-light');
@@ -74,11 +88,15 @@ export default function DeviceSetupScreen() {
   });
   const [sendingDeviceId, setSendingDeviceId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [configuredDevices, setConfiguredDevices] = useState<
+    ConfiguredDevice[]
+  >([]);
 
   useEffect(() => {
     if (step === 'wifi-setup') {
       initializeBluetooth();
     }
+    loadConfiguredDevices();
   }, [step]);
 
   const initializeBluetooth = async () => {
@@ -180,14 +198,29 @@ export default function DeviceSetupScreen() {
   const disconnectDevice = async (deviceId: string) => {
     try {
       setConnectingDeviceId(deviceId);
-      await bluetoothService.disconnectDevice(deviceId);
+
+      // Check if device is actually connected before trying to disconnect
+      const isConnected = bluetoothService
+        .getConnectedDevices()
+        .some((device) => device.id === deviceId);
+
+      if (isConnected) {
+        await bluetoothService.disconnectDevice(deviceId);
+      }
+
+      // Update UI regardless of connection status
       setConnectedDevices((prev) =>
         prev.filter((device) => device.id !== deviceId)
       );
-      showAlert('Success', 'Device disconnected successfully', 'success');
+
+      showAlert('Success', 'Device removed successfully', 'success');
     } catch (error) {
       console.error('Error disconnecting device:', error);
-      showAlert('Error', 'Failed to disconnect device', 'error');
+      // Still update UI even if there's an error
+      setConnectedDevices((prev) =>
+        prev.filter((device) => device.id !== deviceId)
+      );
+      showAlert('Info', 'Device removed from list', 'info');
     } finally {
       setConnectingDeviceId(null);
     }
@@ -226,6 +259,7 @@ export default function DeviceSetupScreen() {
           roomId,
           wifiConfig: wifiConfigData.wifiConfig,
           lastConnected: new Date().toISOString(),
+          status: 'active',
         };
 
         try {
@@ -233,7 +267,15 @@ export default function DeviceSetupScreen() {
             'configuredDevices'
           );
           const devices = existingDevices ? JSON.parse(existingDevices) : [];
-          devices.push(deviceInfo);
+
+          // Check if device already exists
+          const deviceIndex = devices.findIndex((d: any) => d.id === deviceId);
+          if (deviceIndex !== -1) {
+            devices[deviceIndex] = deviceInfo;
+          } else {
+            devices.push(deviceInfo);
+          }
+
           await AsyncStorage.setItem(
             'configuredDevices',
             JSON.stringify(devices)
@@ -245,7 +287,7 @@ export default function DeviceSetupScreen() {
             const newDevice = {
               id: deviceId,
               name: name.trim(),
-              isActive: false,
+              isActive: true,
             };
 
             const updatedDevices = {
@@ -258,6 +300,9 @@ export default function DeviceSetupScreen() {
 
             updateRoom(roomId, { devices: updatedDevices });
           }
+
+          // Reload configured devices to update all rooms
+          await loadConfiguredDevices();
 
           showAlert('Success', 'Device configured successfully', 'success');
           router.back();
@@ -379,6 +424,48 @@ export default function DeviceSetupScreen() {
     </View>
   );
 
+  const renderConfiguredDevices = () => (
+    <View style={styles.configuredDevicesCard}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.cardTitle}>Configured Devices</Text>
+      </View>
+      {configuredDevices.length > 0 ? (
+        <View style={styles.configuredDevicesList}>
+          {configuredDevices.map((device) => {
+            const DeviceIcon = deviceIcons[device.type] || Bluetooth;
+            return (
+              <View key={device.id} style={styles.configuredDeviceItem}>
+                <View style={styles.deviceIcon}>
+                  <DeviceIcon size={24} color="#2563eb" />
+                </View>
+                <View style={styles.deviceDetails}>
+                  <Text style={styles.deviceName}>{device.name}</Text>
+                  <Text style={styles.deviceInfo}>
+                    Type: {device.type.replace('smart-', '').toUpperCase()}
+                  </Text>
+                  <Text style={styles.deviceInfo}>
+                    SSID: {device.wifiConfig.ssid}
+                  </Text>
+                  <Text style={styles.deviceInfo}>
+                    Last Connected:{' '}
+                    {new Date(device.lastConnected).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.noDevices}>
+          <Text style={styles.noDevicesText}>No configured devices</Text>
+          <Text style={styles.noDevicesSubtext}>
+            Configure a device to see it here
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
   const renderWifiSetupStep = () => (
     <View style={styles.stepContainer}>
       <View style={styles.header}>
@@ -405,6 +492,7 @@ export default function DeviceSetupScreen() {
         }
       >
         <View style={styles.wifiSetupContainer}>
+          {/* {renderConfiguredDevices()} */}
           <View style={styles.wifiSetupCard}>
             <View style={styles.cardHeader}>
               <Wifi size={24} color="#2563eb" />
@@ -901,7 +989,10 @@ const styles = StyleSheet.create({
     borderColor: '#2563eb30',
   },
   deviceInfo: {
-    flex: 1,
+    color: '#94a3b8',
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
+    marginTop: 2,
   },
   deviceName: {
     color: '#f8fafc',
@@ -1047,5 +1138,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+  },
+  configuredDevicesCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#2563eb30',
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  configuredDevicesList: {
+    gap: 12,
+  },
+  configuredDeviceItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2563eb30',
   },
 });
