@@ -134,6 +134,14 @@ export default function DeviceDetailScreen() {
   });
 
   const handleColorChange = (newColor: { r: number; g: number; b: number }) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
     setColor(newColor);
     publishMessage(
       'control',
@@ -238,7 +246,7 @@ export default function DeviceDetailScreen() {
     try {
       setMqttStatus('connecting');
       mqttClient.current = new Paho.Client(
-        '192.168.1.124',
+        '192.168.1.100',
         Number(9001),
         `client-${Math.random().toString(16).substr(2, 8)}`
       );
@@ -247,8 +255,10 @@ export default function DeviceDetailScreen() {
         onSuccess: () => {
           setMqttStatus('connected');
           setMqttConnected(true);
+          showAlert('Success', 'MQTT Connected successfully', 'success');
           // Subscribe to device-specific control topic
-          mqttClient.current.subscribe(`office/${deviceType}/control`);
+          mqttClient.current.subscribe(`office/ac/control`);
+          // mqttClient.current.subscribe(`office/${deviceType}/control`);
           // Subscribe to sensor data topics if needed
           if (deviceType === ('sensor' as DeviceType)) {
             mqttClient.current.subscribe('home/test/temp');
@@ -259,7 +269,11 @@ export default function DeviceDetailScreen() {
         onFailure: (err: any) => {
           setMqttStatus('disconnected');
           setMqttConnected(false);
-          showAlert('Error', 'Failed to connect to MQTT broker', 'error');
+          showAlert(
+            'Error',
+            'Failed to connect to MQTT broker. Please check your connection.',
+            'error'
+          );
           console.error('MQTT Connection failed:', err);
         },
         userName: 'detpos',
@@ -272,7 +286,11 @@ export default function DeviceDetailScreen() {
       mqttClient.current.onConnectionLost = onConnectionLost;
     } catch (error) {
       setMqttStatus('disconnected');
-      showAlert('Error', 'Failed to initialize MQTT client', 'error');
+      showAlert(
+        'Error',
+        'Failed to initialize MQTT client. Please check your connection.',
+        'error'
+      );
       console.error('MQTT initialization error:', error);
     }
   };
@@ -307,13 +325,21 @@ export default function DeviceDetailScreen() {
     if (responseObject.errorCode !== 0) {
       setMqttStatus('disconnected');
       setMqttConnected(false);
-      showAlert('Error', 'MQTT Connection lost', 'error');
+      showAlert(
+        'Error',
+        'MQTT Connection lost. Please check your connection.',
+        'error'
+      );
     }
   };
 
   const publishMessage = (topic: string, message: any) => {
     if (!mqttClient.current || !mqttConnected) {
-      showAlert('Error', 'MQTT not connected', 'error');
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
       return;
     }
 
@@ -328,17 +354,41 @@ export default function DeviceDetailScreen() {
   };
 
   const handlePowerToggle = (value: boolean) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
     setIsActive(value as any);
     publishMessage('control', value ? 'ON' : 'OFF');
   };
 
   const handleBrightnessChange = (value: number) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
     const newBrightness = Math.max(0, Math.min(100, value));
     setBrightness(newBrightness);
     publishMessage('control', `BRIGHTNESS:${newBrightness}`);
   };
 
   const handleScheduleSet = (time: string) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
     setSchedule(time);
     publishMessage('control', `SCHEDULE:${time}`);
     setShowScheduleModal(false);
@@ -697,6 +747,28 @@ export default function DeviceDetailScreen() {
               {isActive ? 'Active' : 'Inactive'}
             </Text>
             <Text style={styles.lastSeen}>{defaultDeviceStates.lastSeen}</Text>
+            <View style={styles.mqttStatusContainer}>
+              <View
+                style={[
+                  styles.mqttStatusIndicator,
+                  {
+                    backgroundColor:
+                      mqttStatus === 'connected'
+                        ? '#22c55e'
+                        : mqttStatus === 'connecting'
+                        ? '#eab308'
+                        : '#ef4444',
+                  },
+                ]}
+              />
+              <Text style={styles.mqttStatusText}>
+                {mqttStatus === 'connected'
+                  ? 'Connected'
+                  : mqttStatus === 'connecting'
+                  ? 'Connecting...'
+                  : 'Disconnected'}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             style={[styles.toggleButton, isActive && styles.toggleButtonActive]}
@@ -1248,5 +1320,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#2563eb30',
+  },
+  mqttStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  mqttStatusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  mqttStatusText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
   },
 });

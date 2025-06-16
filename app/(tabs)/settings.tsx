@@ -41,6 +41,9 @@ import {
   FileText,
   Wifi as WifiIcon,
   Router,
+  Wifi as WifiIcon2,
+  Network,
+  Server,
 } from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
@@ -144,6 +147,20 @@ export default function SettingsScreen() {
   });
   const [isSending, setIsSending] = useState(false);
   const [isBluetoothReady, setIsBluetoothReady] = useState(false);
+  const [wifiNetworks, setWifiNetworks] = useState<
+    Array<{ ssid: string; rssi: number }>
+  >([]);
+  const [isWifiScanning, setIsWifiScanning] = useState(false);
+  const [showWifiScan, setShowWifiScan] = useState(false);
+  const [networkDevices, setNetworkDevices] = useState<
+    Array<{
+      ip: string;
+      mac: string;
+      hostname: string;
+      vendor: string;
+    }>
+  >([]);
+  const [isScanningNetwork, setIsScanningNetwork] = useState(false);
 
   useEffect(() => {
     const initializeBluetooth = async () => {
@@ -411,6 +428,98 @@ export default function SettingsScreen() {
       showAlert('Error', 'Failed to send WiFi configuration', 'error');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const startWifiScan = async () => {
+    try {
+      setIsWifiScanning(true);
+      // Simulate WiFi scanning with mock data
+      setTimeout(() => {
+        const mockNetworks = [
+          { ssid: 'Home WiFi', rssi: -45 },
+          { ssid: 'Neighbor WiFi', rssi: -65 },
+          { ssid: 'Guest Network', rssi: -55 },
+          { ssid: 'Office WiFi', rssi: -70 },
+        ];
+        setWifiNetworks(mockNetworks);
+        setIsWifiScanning(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Error scanning WiFi:', error);
+      showAlert('Error', 'Failed to scan WiFi networks', 'error');
+      setIsWifiScanning(false);
+    }
+  };
+
+  const getWifiSignalStrength = (rssi: number) => {
+    if (rssi >= -50) return 'Excellent';
+    if (rssi >= -60) return 'Good';
+    if (rssi >= -70) return 'Fair';
+    return 'Poor';
+  };
+
+  const getWifiSignalColor = (rssi: number) => {
+    if (rssi >= -50) return '#22c55e';
+    if (rssi >= -60) return '#84cc16';
+    if (rssi >= -70) return '#eab308';
+    return '#ef4444';
+  };
+
+  const startNetworkScan = async () => {
+    try {
+      setIsScanningNetwork(true);
+      // Simulate network scanning with mock data
+      setTimeout(() => {
+        const mockDevices = [
+          {
+            ip: '192.168.1.1',
+            mac: '00:11:22:33:44:55',
+            hostname: 'Router',
+            vendor: 'TP-Link',
+          },
+          {
+            ip: '192.168.1.2',
+            mac: 'AA:BB:CC:DD:EE:FF',
+            hostname: 'Smart TV',
+            vendor: 'Samsung',
+          },
+          {
+            ip: '192.168.1.3',
+            mac: '12:34:56:78:90:AB',
+            hostname: 'ESP32 Device',
+            vendor: 'Espressif',
+          },
+          {
+            ip: '192.168.1.4',
+            mac: 'CD:EF:12:34:56:78',
+            hostname: 'Smart Bulb',
+            vendor: 'Philips Hue',
+          },
+        ];
+        setNetworkDevices(mockDevices);
+        setIsScanningNetwork(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Error scanning network:', error);
+      showAlert('Error', 'Failed to scan network devices', 'error');
+      setIsScanningNetwork(false);
+    }
+  };
+
+  const getDeviceIcon = (vendor: string) => {
+    switch (vendor.toLowerCase()) {
+      case 'tp-link':
+      case 'router':
+        return <Router size={24} color="#2563eb" />;
+      case 'samsung':
+      case 'smart tv':
+        return <Smartphone size={24} color="#2563eb" />;
+      case 'espressif':
+      case 'esp32':
+        return <Server size={24} color="#2563eb" />;
+      default:
+        return <Network size={24} color="#2563eb" />;
     }
   };
 
@@ -729,6 +838,193 @@ export default function SettingsScreen() {
                     ))}
                   </ScrollView>
                 </View>
+              </View>
+            )}
+          </View>
+        </SettingSection>
+
+        {/* WiFi Scan Section */}
+        <SettingSection title="WiFi Networks">
+          <View style={styles.wifiCard}>
+            <View style={styles.wifiHeader}>
+              <View style={styles.wifiStatus}>
+                <View
+                  style={[
+                    styles.statusIndicator,
+                    {
+                      backgroundColor:
+                        wifiNetworks.length > 0 ? '#22c55e' : '#ef4444',
+                    },
+                  ]}
+                />
+                <Text style={styles.statusText}>
+                  {wifiNetworks.length > 0
+                    ? `${wifiNetworks.length} Network${
+                        wifiNetworks.length !== 1 ? 's' : ''
+                      } Found`
+                    : 'No Networks Found'}
+                </Text>
+              </View>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.headerButton,
+                    isWifiScanning && styles.scanningButton,
+                  ]}
+                  onPress={startWifiScan}
+                  disabled={isWifiScanning}
+                >
+                  {isWifiScanning ? (
+                    <ActivityIndicator color="#2563eb" />
+                  ) : (
+                    <RefreshCw size={20} color="#2563eb" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {wifiNetworks.length > 0 ? (
+              <View style={styles.wifiList}>
+                {wifiNetworks.map((network, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.wifiItem}
+                    onPress={() => {
+                      setWifiConfig((prev) => ({
+                        ...prev,
+                        ssid: network.ssid,
+                      }));
+                      setIsModalVisible(true);
+                    }}
+                  >
+                    <View style={styles.wifiIcon}>
+                      <WifiIcon2
+                        size={24}
+                        color={getWifiSignalColor(network.rssi)}
+                      />
+                    </View>
+                    <View style={styles.wifiInfo}>
+                      <Text style={styles.wifiName}>{network.ssid}</Text>
+                      <Text style={styles.wifiSignal}>
+                        Signal: {getWifiSignalStrength(network.rssi)}
+                      </Text>
+                    </View>
+                    <ChevronRight size={20} color="#64748b" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.noWifiNetworks}>
+                <View style={styles.noWifiIcon}>
+                  <WifiOff size={48} color="#64748b" />
+                </View>
+                <Text style={styles.noWifiText}>No WiFi networks found</Text>
+                <Text style={styles.noWifiSubtext}>
+                  Make sure WiFi is enabled and try scanning again
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.scanButton,
+                    isWifiScanning && styles.scanButtonActive,
+                  ]}
+                  onPress={startWifiScan}
+                  disabled={isWifiScanning}
+                >
+                  {isWifiScanning ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.scanButtonText}>Scan for Networks</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </SettingSection>
+
+        {/* Network Scanner Section */}
+        <SettingSection title="Network Devices">
+          <View style={styles.networkCard}>
+            <View style={styles.networkHeader}>
+              <View style={styles.networkStatus}>
+                <View
+                  style={[
+                    styles.statusIndicator,
+                    {
+                      backgroundColor:
+                        networkDevices.length > 0 ? '#22c55e' : '#ef4444',
+                    },
+                  ]}
+                />
+                <Text style={styles.statusText}>
+                  {networkDevices.length > 0
+                    ? `${networkDevices.length} Device${
+                        networkDevices.length !== 1 ? 's' : ''
+                      } Found`
+                    : 'No Devices Found'}
+                </Text>
+              </View>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.headerButton,
+                    isScanningNetwork && styles.scanningButton,
+                  ]}
+                  onPress={startNetworkScan}
+                  disabled={isScanningNetwork}
+                >
+                  {isScanningNetwork ? (
+                    <ActivityIndicator color="#2563eb" />
+                  ) : (
+                    <RefreshCw size={20} color="#2563eb" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {networkDevices.length > 0 ? (
+              <View style={styles.networkList}>
+                {networkDevices.map((device, index) => (
+                  <View key={index} style={styles.networkItem}>
+                    <View style={styles.networkIcon}>
+                      {getDeviceIcon(device.vendor)}
+                    </View>
+                    <View style={styles.networkInfo}>
+                      <Text style={styles.networkName}>{device.hostname}</Text>
+                      <Text style={styles.networkDetails}>IP: {device.ip}</Text>
+                      <Text style={styles.networkDetails}>
+                        MAC: {device.mac}
+                      </Text>
+                      <Text style={styles.networkVendor}>{device.vendor}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.noNetworkDevices}>
+                <View style={styles.noNetworkIcon}>
+                  <Network size={48} color="#64748b" />
+                </View>
+                <Text style={styles.noNetworkText}>
+                  No network devices found
+                </Text>
+                <Text style={styles.noNetworkSubtext}>
+                  Make sure you're connected to the network and try scanning
+                  again
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.scanButton,
+                    isScanningNetwork && styles.scanButtonActive,
+                  ]}
+                  onPress={startNetworkScan}
+                  disabled={isScanningNetwork}
+                >
+                  {isScanningNetwork ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.scanButtonText}>Scan Network</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -1482,5 +1778,167 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
+  },
+  wifiCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  wifiHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  wifiStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  wifiList: {
+    marginTop: 16,
+  },
+  wifiItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  wifiIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  wifiInfo: {
+    flex: 1,
+  },
+  wifiName: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  wifiSignal: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  noWifiNetworks: {
+    padding: 32,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  noWifiIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noWifiText: {
+    color: '#f8fafc',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  noWifiSubtext: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    maxWidth: width * 0.8,
+  },
+  networkCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  networkHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  networkStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  networkList: {
+    marginTop: 16,
+  },
+  networkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  networkIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  networkInfo: {
+    flex: 1,
+  },
+  networkName: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  networkDetails: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  networkVendor: {
+    color: '#2563eb',
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  noNetworkDevices: {
+    padding: 32,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  noNetworkIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noNetworkText: {
+    color: '#f8fafc',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  noNetworkSubtext: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    maxWidth: width * 0.8,
   },
 });
