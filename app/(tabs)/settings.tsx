@@ -44,6 +44,7 @@ import {
   Wifi as WifiIcon2,
   Network,
   Server,
+  Plus,
 } from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
@@ -167,11 +168,89 @@ export default function SettingsScreen() {
   >('disconnected');
   const [tcpConnected, setTcpConnected] = useState(false);
   const [tcpHost, setTcpHost] = useState('192.168.1.100');
-  const [tcpPort, setTcpPort] = useState('8080');
-  const [tcpTopic, setTcpTopic] = useState('tcp/test');
+  const [tcpPort, setTcpPort] = useState('1883');
+  const [tcpTopic, setTcpTopic] = useState('office/ac/control');
   const [tcpMessage, setTcpMessage] = useState('');
   const [tcpMessages, setTcpMessages] = useState<string[]>([]);
   const tcpClient = useRef<any>(null);
+
+  // Device Control States
+  const [deviceStates, setDeviceStates] = useState<{ [key: string]: boolean }>(
+    {}
+  );
+  const [deviceTopics, setDeviceTopics] = useState<{ [key: string]: string }>(
+    {}
+  );
+  const [selectedDeviceForControl, setSelectedDeviceForControl] = useState<
+    string | null
+  >(null);
+
+  // Device Control Functions
+  const toggleDeviceState = async (deviceId: string) => {
+    try {
+      const newState = !deviceStates[deviceId];
+      setDeviceStates((prev) => ({
+        ...prev,
+        [deviceId]: newState,
+      }));
+
+      // Prepare control message
+      const controlMessage = {
+        deviceId,
+        state: newState ? 'ON' : 'OFF',
+        timestamp: new Date().toISOString(),
+        type: 'control',
+      };
+
+      // Send via MQTT if connected
+      if (mqttClient.current && mqttConnected) {
+        const topic = deviceTopics[deviceId] || `devices/${deviceId}/control`;
+        const message = new Paho.Message(JSON.stringify(controlMessage));
+        message.destinationName = topic;
+        message.qos = 1; // At least once delivery
+        message.retained = false;
+        mqttClient.current.send(message);
+
+        setMqttMessages((prev) => [
+          ...prev,
+          `[${topic}] Sent: ${JSON.stringify(controlMessage)}`,
+        ]);
+      }
+
+      showAlert(
+        'Success',
+        `Device ${newState ? 'turned ON' : 'turned OFF'}`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Error toggling device state:', error);
+      showAlert('Error', 'Failed to toggle device state', 'error');
+    }
+  };
+
+  const addDeviceControl = (deviceId: string, topic: string) => {
+    setDeviceStates((prev) => ({
+      ...prev,
+      [deviceId]: false,
+    }));
+    setDeviceTopics((prev) => ({
+      ...prev,
+      [deviceId]: topic,
+    }));
+  };
+
+  const removeDeviceControl = (deviceId: string) => {
+    setDeviceStates((prev) => {
+      const newStates = { ...prev };
+      delete newStates[deviceId];
+      return newStates;
+    });
+    setDeviceTopics((prev) => {
+      const newTopics = { ...prev };
+      delete newTopics[deviceId];
+      return newTopics;
+    });
+  };
 
   useEffect(() => {
     const initializeBluetooth = async () => {
@@ -621,24 +700,40 @@ export default function SettingsScreen() {
   };
 
   const sendTCPMessage = () => {
-    if (!tcpConnected || !tcpClient.current) {
+    if (!tcpClient.current || !tcpConnected) {
+      console.log('TCP not connected, cannot send message');
+      setTcpMessages((prev) => [...prev, 'Not connected to device']);
       showAlert('Error', 'TCP not connected', 'error');
       return;
     }
 
     try {
-      const message = JSON.stringify({
+      // Create message payload
+      const payload = {
         topic: tcpTopic,
         message: tcpMessage,
         timestamp: new Date().toISOString(),
-      });
+        type: 'control',
+      };
 
-      const socket = tcpClient.current;
-      socket.write(message + '\n', (error?: Error) => {
+      console.log('Sending TCP message:', payload); // Debug log
+      console.log('Publishing to topic:', tcpTopic); // Debug log
+
+      // Convert payload to string and add newline
+      const messageString = JSON.stringify(payload) + '\n';
+
+      // Send message
+      tcpClient.current.write(messageString, (error?: Error) => {
         if (error) {
+          console.error('Error sending TCP message:', error);
+          console.error('Stack trace:', error.stack);
+          setTcpMessages((prev) => [
+            ...prev,
+            `Error sending message: ${error.message}`,
+          ]);
           showAlert('Error', 'Failed to send message', 'error');
-          console.error('TCP Send error:', error);
         } else {
+          console.log('TCP message sent successfully');
           setTcpMessages((prev) => [
             ...prev,
             `[${tcpTopic}] Sent: ${tcpMessage}`,
@@ -647,11 +742,25 @@ export default function SettingsScreen() {
           setTcpMessage('');
         }
       });
+
+      // Log the action
+      setTcpMessages((prev) => [
+        ...prev,
+        `Control message sent: ${tcpMessage} to ${tcpTopic}`,
+      ]);
     } catch (error) {
+      console.error('Error in sendTCPMessage:', error);
+      console.error(
+        'Stack trace:',
+        error instanceof Error ? error.stack : 'No stack trace'
+      );
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+      setTcpMessages((prev) => [
+        ...prev,
+        `Error sending control message: ${errorMessage}`,
+      ]);
       showAlert('Error', `Failed to send message: ${errorMessage}`, 'error');
-      console.error('TCP Send error:', error);
     }
   };
 
@@ -979,6 +1088,98 @@ export default function SettingsScreen() {
                     ))}
                   </ScrollView>
                 </View>
+              </View>
+            )}
+          </View>
+        </SettingSection>
+
+        {/* Device Control Section */}
+        <SettingSection title="Device Control">
+          <View style={styles.deviceControlCard}>
+            <View style={styles.deviceControlHeader}>
+              <View style={styles.deviceControlStatus}>
+                <View
+                  style={[
+                    styles.statusIndicator,
+                    {
+                      backgroundColor:
+                        Object.keys(deviceStates).length > 0
+                          ? '#22c55e'
+                          : '#ef4444',
+                    },
+                  ]}
+                />
+                <Text style={styles.statusText}>
+                  {Object.keys(deviceStates).length > 0
+                    ? `${Object.keys(deviceStates).length} Device${
+                        Object.keys(deviceStates).length !== 1 ? 's' : ''
+                      } Available`
+                    : 'No Devices Available'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.headerButton, styles.addDeviceButton]}
+                onPress={() => {
+                  // Add a new device control
+                  const deviceId = `device_${Date.now()}`;
+                  addDeviceControl(deviceId, `devices/${deviceId}/control`);
+                }}
+              >
+                <Plus size={20} color="#2563eb" />
+              </TouchableOpacity>
+            </View>
+
+            {Object.keys(deviceStates).length > 0 ? (
+              <View style={styles.deviceControlList}>
+                {Object.entries(deviceStates).map(([deviceId, state]) => (
+                  <View key={deviceId} style={styles.deviceControlItem}>
+                    <View style={styles.deviceControlInfo}>
+                      <Text style={styles.deviceControlName}>
+                        Device {deviceId.split('_')[1]}
+                      </Text>
+                      <Text style={styles.deviceControlTopic}>
+                        Topic: {deviceTopics[deviceId]}
+                      </Text>
+                    </View>
+                    <View style={styles.deviceControlActions}>
+                      <Switch
+                        value={state}
+                        onValueChange={() => toggleDeviceState(deviceId)}
+                        trackColor={{ false: '#334155', true: '#2563eb' }}
+                        thumbColor="white"
+                      />
+                      <TouchableOpacity
+                        style={styles.removeDeviceButton}
+                        onPress={() => removeDeviceControl(deviceId)}
+                      >
+                        <X size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.noDevicesControl}>
+                <View style={styles.noDevicesControlIcon}>
+                  <PowerOff size={48} color="#64748b" />
+                </View>
+                <Text style={styles.noDevicesControlText}>
+                  No devices available for control
+                </Text>
+                <Text style={styles.noDevicesControlSubtext}>
+                  Add devices to control them via MQTT
+                </Text>
+                <TouchableOpacity
+                  style={styles.addDeviceControlButton}
+                  onPress={() => {
+                    const deviceId = `device_${Date.now()}`;
+                    addDeviceControl(deviceId, `devices/${deviceId}/control`);
+                  }}
+                >
+                  <Text style={styles.addDeviceControlButtonText}>
+                    Add Device Control
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -2284,5 +2485,94 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#1e293b',
     borderRadius: 8,
+  },
+  deviceControlCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  deviceControlHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  deviceControlStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addDeviceButton: {
+    backgroundColor: '#1e40af',
+  },
+  deviceControlList: {
+    marginTop: 16,
+  },
+  deviceControlItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  deviceControlInfo: {
+    flex: 1,
+  },
+  deviceControlName: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deviceControlTopic: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  deviceControlActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  removeDeviceButton: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+  },
+  noDevicesControl: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  noDevicesControlIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noDevicesControlText: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  noDevicesControlSubtext: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  addDeviceControlButton: {
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 12,
+  },
+  addDeviceControlButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
