@@ -198,7 +198,6 @@ export default function SettingsScreen() {
       const controlMessage = {
         deviceId,
         state: newState ? 'ON' : 'OFF',
-        timestamp: new Date().toISOString(),
         type: 'control',
       };
 
@@ -423,7 +422,31 @@ export default function SettingsScreen() {
       };
 
       mqttClient.current.connect(options);
-      mqttClient.current.onMessageArrived = onMessageArrived;
+
+      // Set up message listener
+      mqttClient.current.onMessageArrived = (message: any) => {
+        try {
+          const payload = JSON.parse(message.payloadString);
+          setMqttMessages((prev) => [
+            ...prev,
+            `[${message.destinationName}] Received: ${JSON.stringify(payload)}`,
+          ]);
+
+          // Handle device state updates
+          if (payload.type === 'state_update' && payload.deviceId) {
+            setDeviceStates((prev) => ({
+              ...prev,
+              [payload.deviceId]: payload.state === 'ON',
+            }));
+          }
+        } catch (error) {
+          setMqttMessages((prev) => [
+            ...prev,
+            `[${message.destinationName}] Received: ${message.payloadString}`,
+          ]);
+        }
+      };
+
       mqttClient.current.onConnectionLost = onConnectionLost;
     } catch (error) {
       setMqttStatus('disconnected');
@@ -439,13 +462,6 @@ export default function SettingsScreen() {
       setMqttConnected(false);
       showAlert('Success', 'MQTT Disconnected successfully', 'success');
     }
-  };
-
-  const onMessageArrived = (message: any) => {
-    setMqttMessages((prev) => [
-      ...prev,
-      `${message.destinationName}: ${message.payloadString}`,
-    ]);
   };
 
   const onConnectionLost = (responseObject: any) => {
@@ -648,6 +664,29 @@ export default function SettingsScreen() {
 
       tcpClient.current = socket;
 
+      // Set up message listener
+      socket.on('data', (data: string | Buffer) => {
+        try {
+          const message = data.toString().trim();
+          const payload = JSON.parse(message);
+
+          setTcpMessages((prev) => [
+            ...prev,
+            `Received: ${JSON.stringify(payload)}`,
+          ]);
+
+          // Handle device state updates
+          if (payload.type === 'state_update' && payload.deviceId) {
+            setDeviceStates((prev) => ({
+              ...prev,
+              [payload.deviceId]: payload.state === 'ON',
+            }));
+          }
+        } catch (error) {
+          setTcpMessages((prev) => [...prev, `Received: ${data.toString()}`]);
+        }
+      });
+
       // Handle connection events
       socket.on('error', (error: Error) => {
         setTcpStatus('disconnected');
@@ -712,7 +751,6 @@ export default function SettingsScreen() {
       const payload = {
         topic: tcpTopic,
         message: tcpMessage,
-        timestamp: new Date().toISOString(),
         type: 'control',
       };
 
