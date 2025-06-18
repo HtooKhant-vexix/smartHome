@@ -109,6 +109,16 @@ function SettingSection({ title, children }: SettingSectionProps) {
   );
 }
 
+interface TCPConnection {
+  id: string;
+  host: string;
+  port: string;
+  status: 'disconnected' | 'connecting' | 'connected';
+  messages: string[];
+  topic: string;
+  message: string;
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
@@ -184,6 +194,12 @@ export default function SettingsScreen() {
   const [selectedDeviceForControl, setSelectedDeviceForControl] = useState<
     string | null
   >(null);
+
+  const [tcpConnections, setTcpConnections] = useState<TCPConnection[]>([]);
+  const [selectedTcpConnection, setSelectedTcpConnection] = useState<
+    string | null
+  >(null);
+  const tcpClients = useRef<{ [key: string]: any }>({});
 
   // Device Control Functions
   const toggleDeviceState = async (deviceId: string) => {
@@ -481,12 +497,34 @@ export default function SettingsScreen() {
     try {
       const message = new Paho.Message(mqttMessage);
       message.destinationName = mqttTopic;
+
+      // Store current message and topic for logging
+      const currentMessage = mqttMessage;
+      const currentTopic = mqttTopic;
+
+      // Immediately update UI to show message as sending
+      setMqttMessages((prev) => [
+        ...prev,
+        `[${currentTopic}] Sending: ${currentMessage}`,
+      ]);
+      setMqttMessage(''); // Clear the message input immediately
+
+      // Send message in the background
       mqttClient.current.send(message);
-      showAlert('Success', 'Message published successfully', 'success');
-      setMqttMessage('');
+
+      // Add success message after sending
+      setMqttMessages((prev) => [
+        ...prev,
+        `[${currentTopic}] Sent successfully`,
+      ]);
     } catch (error) {
       showAlert('Error', 'Failed to publish message', 'error');
       console.error('Publish error:', error);
+      // Add error message to the log
+      setMqttMessages((prev) => [
+        ...prev,
+        `[${mqttTopic}] Error: Failed to publish message`,
+      ]);
     }
   };
 
@@ -629,40 +667,75 @@ export default function SettingsScreen() {
     }
   };
 
-  const connectTCP = async () => {
+  const addTcpConnection = () => {
+    const newConnection: TCPConnection = {
+      id: `tcp_${Date.now()}`,
+      host: '192.168.1.100',
+      port: '1883',
+      status: 'disconnected',
+      messages: [],
+      topic: 'tcp/test',
+      message: '',
+    };
+    setTcpConnections((prev) => [...prev, newConnection]);
+    setSelectedTcpConnection(newConnection.id);
+  };
+
+  const removeTcpConnection = (id: string) => {
+    if (tcpClients.current[id]) {
+      tcpClients.current[id].destroy();
+      delete tcpClients.current[id];
+    }
+    setTcpConnections((prev) => prev.filter((conn) => conn.id !== id));
+    if (selectedTcpConnection === id) {
+      setSelectedTcpConnection(null);
+    }
+  };
+
+  const updateTcpConnection = (id: string, updates: Partial<TCPConnection>) => {
+    setTcpConnections((prev) =>
+      prev.map((conn) => (conn.id === id ? { ...conn, ...updates } : conn))
+    );
+  };
+
+  const connectTCP = async (id: string) => {
+    const connection = tcpConnections.find((conn) => conn.id === id);
+    if (!connection) return;
+
     try {
-      setTcpStatus('connecting');
+      updateTcpConnection(id, { status: 'connecting' });
 
       // Validate IP address format
       const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (!ipRegex.test(tcpHost)) {
+      if (!ipRegex.test(connection.host)) {
         throw new Error('Invalid IP address format');
       }
 
       // Validate port number
-      const port = parseInt(tcpPort);
+      const port = parseInt(connection.port);
       if (isNaN(port) || port < 1 || port > 65535) {
         throw new Error('Invalid port number');
       }
 
-      // Create TCP client with proper initialization
+      // Create TCP client
       const options = {
         port: port,
-        host: tcpHost,
-        timeout: 5000, // 5 seconds timeout
+        host: connection.host,
+        timeout: 5000,
       };
 
       const socket = TCPSocket.createConnection(options, () => {
-        setTcpStatus('connected');
-        setTcpConnected(true);
-        setTcpMessages((prev) => [
-          ...prev,
-          `Connected to ${tcpHost}:${tcpPort}`,
-        ]);
+        updateTcpConnection(id, { status: 'connected' });
+        updateTcpConnection(id, {
+          messages: [
+            ...connection.messages,
+            `Connected to ${connection.host}:${connection.port}`,
+          ],
+        });
         showAlert('Success', 'TCP Connected successfully', 'success');
       });
 
-      tcpClient.current = socket;
+      tcpClients.current[id] = socket;
 
       // Set up message listener
       socket.on('data', (data: string | Buffer) => {
@@ -670,10 +743,12 @@ export default function SettingsScreen() {
           const message = data.toString().trim();
           const payload = JSON.parse(message);
 
-          setTcpMessages((prev) => [
-            ...prev,
-            `Received: ${JSON.stringify(payload)}`,
-          ]);
+          updateTcpConnection(id, {
+            messages: [
+              ...connection.messages,
+              `Received: ${JSON.stringify(payload)}`,
+            ],
+          });
 
           // Handle device state updates
           if (payload.type === 'state_update' && payload.deviceId) {
@@ -683,52 +758,63 @@ export default function SettingsScreen() {
             }));
           }
         } catch (error) {
-          setTcpMessages((prev) => [...prev, `Received: ${data.toString()}`]);
+          updateTcpConnection(id, {
+            messages: [...connection.messages, `Received: ${data.toString()}`],
+          });
         }
       });
 
       // Handle connection events
       socket.on('error', (error: Error) => {
-        setTcpStatus('disconnected');
-        setTcpConnected(false);
-        setTcpMessages((prev) => [
-          ...prev,
-          `Connection error: ${error.message}`,
-        ]);
+        updateTcpConnection(id, { status: 'disconnected' });
+        updateTcpConnection(id, {
+          messages: [
+            ...connection.messages,
+            `Connection error: ${error.message}`,
+          ],
+        });
         showAlert('Error', `Failed to connect: ${error.message}`, 'error');
-        if (tcpClient.current) {
-          tcpClient.current.destroy();
+        if (tcpClients.current[id]) {
+          tcpClients.current[id].destroy();
+          delete tcpClients.current[id];
         }
       });
 
       socket.on('close', () => {
-        setTcpStatus('disconnected');
-        setTcpConnected(false);
-        setTcpMessages((prev) => [...prev, 'Connection closed']);
+        updateTcpConnection(id, { status: 'disconnected' });
+        updateTcpConnection(id, {
+          messages: [...connection.messages, 'Connection closed'],
+        });
       });
     } catch (error) {
-      setTcpStatus('disconnected');
-      setTcpConnected(false);
+      updateTcpConnection(id, { status: 'disconnected' });
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      setTcpMessages((prev) => [...prev, `Connection error: ${errorMessage}`]);
+      updateTcpConnection(id, {
+        messages: [...connection.messages, `Connection error: ${errorMessage}`],
+      });
       showAlert('Error', `Failed to connect: ${errorMessage}`, 'error');
-      if (tcpClient.current) {
-        tcpClient.current.destroy();
+      if (tcpClients.current[id]) {
+        tcpClients.current[id].destroy();
+        delete tcpClients.current[id];
       }
     }
   };
 
-  const disconnectTCP = () => {
+  const disconnectTCP = (id: string) => {
     try {
-      if (tcpClient.current) {
-        tcpClient.current.end();
-        tcpClient.current.destroy();
-        tcpClient.current = null;
+      if (tcpClients.current[id]) {
+        tcpClients.current[id].end();
+        tcpClients.current[id].destroy();
+        delete tcpClients.current[id];
       }
-      setTcpStatus('disconnected');
-      setTcpConnected(false);
-      setTcpMessages((prev) => [...prev, 'Disconnected from server']);
+      updateTcpConnection(id, { status: 'disconnected' });
+      const connection = tcpConnections.find((conn) => conn.id === id);
+      if (connection) {
+        updateTcpConnection(id, {
+          messages: [...connection.messages, 'Disconnected from server'],
+        });
+      }
       showAlert('Success', 'TCP Disconnected successfully', 'success');
     } catch (error) {
       const errorMessage =
@@ -738,66 +824,84 @@ export default function SettingsScreen() {
     }
   };
 
-  const sendTCPMessage = () => {
-    if (!tcpClient.current || !tcpConnected) {
-      console.log('TCP not connected, cannot send message');
-      setTcpMessages((prev) => [...prev, 'Not connected to device']);
+  const sendTCPMessage = (id: string) => {
+    const connection = tcpConnections.find((conn) => conn.id === id);
+    if (!connection) {
+      showAlert('Error', 'Connection not found', 'error');
+      return;
+    }
+
+    if (!tcpClients.current[id]) {
+      showAlert('Error', 'TCP client not initialized', 'error');
+      return;
+    }
+
+    if (connection.status !== 'connected') {
       showAlert('Error', 'TCP not connected', 'error');
       return;
     }
 
-    try {
-      // Create message payload
-      const payload = {
-        topic: tcpTopic,
-        message: tcpMessage,
-        type: 'control',
-      };
+    if (!connection.message.trim() || !connection.topic.trim()) {
+      showAlert('Error', 'Message and topic cannot be empty', 'error');
+      return;
+    }
 
-      console.log('Sending TCP message:', payload); // Debug log
-      console.log('Publishing to topic:', tcpTopic); // Debug log
+    try {
+      // Create message payload with only topic and message
+      const payload = {
+        topic: connection.topic,
+        message: connection.message,
+      };
 
       // Convert payload to string and add newline
       const messageString = JSON.stringify(payload) + '\n';
 
-      // Send message
-      tcpClient.current.write(messageString, (error?: Error) => {
-        if (error) {
-          console.error('Error sending TCP message:', error);
-          console.error('Stack trace:', error.stack);
-          setTcpMessages((prev) => [
-            ...prev,
-            `Error sending message: ${error.message}`,
-          ]);
-          showAlert('Error', 'Failed to send message', 'error');
-        } else {
-          console.log('TCP message sent successfully');
-          setTcpMessages((prev) => [
-            ...prev,
-            `[${tcpTopic}] Sent: ${tcpMessage}`,
-          ]);
-          showAlert('Success', 'Message sent successfully', 'success');
-          setTcpMessage('');
-        }
+      // Store the current message for logging
+      const currentMessage = connection.message;
+      const currentTopic = connection.topic;
+
+      // Immediately update UI to show message as sent
+      updateTcpConnection(id, {
+        messages: [
+          ...connection.messages,
+          `[${currentTopic}] Sending: ${currentMessage}`,
+        ],
+        message: '', // Clear the message input immediately
       });
 
-      // Log the action
-      setTcpMessages((prev) => [
-        ...prev,
-        `Control message sent: ${tcpMessage} to ${tcpTopic}`,
-      ]);
+      // Send message in the background
+      tcpClients.current[id].write(messageString, (error?: Error) => {
+        if (error) {
+          console.error('Error sending TCP message:', error);
+          // Update UI to show error if it occurs
+          updateTcpConnection(id, {
+            messages: [
+              ...connection.messages,
+              `[${currentTopic}] Error: ${error.message}`,
+            ],
+          });
+          showAlert('Error', 'Failed to send message', 'error');
+        } else {
+          // Add success message after sending
+          updateTcpConnection(id, {
+            messages: [
+              ...connection.messages,
+              `[${currentTopic}] Sending: ${currentMessage}`,
+              `[${currentTopic}] Sent successfully`,
+            ],
+          });
+        }
+      });
     } catch (error) {
       console.error('Error in sendTCPMessage:', error);
-      console.error(
-        'Stack trace:',
-        error instanceof Error ? error.stack : 'No stack trace'
-      );
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      setTcpMessages((prev) => [
-        ...prev,
-        `Error sending control message: ${errorMessage}`,
-      ]);
+      updateTcpConnection(id, {
+        messages: [
+          ...connection.messages,
+          `Error sending control message: ${errorMessage}`,
+        ],
+      });
       showAlert('Error', `Failed to send message: ${errorMessage}`, 'error');
     }
   };
@@ -805,9 +909,9 @@ export default function SettingsScreen() {
   // Add cleanup on component unmount
   useEffect(() => {
     return () => {
-      if (tcpClient.current) {
-        tcpClient.current.destroy();
-      }
+      Object.values(tcpClients.current).forEach((client) => {
+        client.destroy();
+      });
     };
   }, []);
 
@@ -1410,132 +1514,206 @@ export default function SettingsScreen() {
           </View>
         </SettingSection>
 
-        {/* TCP Connection Test */}
+        {/* TCP Connection Test Section */}
         <SettingSection title="TCP Connection Test">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
-                <View
-                  style={[
-                    styles.statusIndicator,
-                    {
-                      backgroundColor:
-                        tcpStatus === 'connected'
-                          ? '#22c55e'
-                          : tcpStatus === 'connecting'
-                          ? '#eab308'
-                          : '#ef4444',
-                    },
-                  ]}
-                />
                 <Text style={styles.statusText}>
-                  {tcpStatus === 'connected'
-                    ? 'Connected'
-                    : tcpStatus === 'connecting'
-                    ? 'Connecting...'
-                    : 'Disconnected'}
+                  {tcpConnections.length} Connection
+                  {tcpConnections.length !== 1 ? 's' : ''}
                 </Text>
               </View>
-              <View style={styles.headerButtons}>
-                {tcpConnected ? (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.disconnectButton]}
-                    onPress={disconnectTCP}
-                  >
-                    <PowerOff size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                ) : (
+              <TouchableOpacity
+                style={[styles.headerButton, styles.addDeviceButton]}
+                onPress={addTcpConnection}
+              >
+                <Plus size={20} color="#2563eb" />
+              </TouchableOpacity>
+            </View>
+
+            {tcpConnections.map((connection) => (
+              <View key={connection.id} style={styles.tcpConnectionCard}>
+                <View style={styles.tcpConnectionHeader}>
+                  <View style={styles.tcpStatus}>
+                    <View
+                      style={[
+                        styles.statusIndicator,
+                        {
+                          backgroundColor:
+                            connection.status === 'connected'
+                              ? '#22c55e'
+                              : connection.status === 'connecting'
+                              ? '#eab308'
+                              : '#ef4444',
+                        },
+                      ]}
+                    />
+                    <Text style={styles.statusText}>
+                      {connection.status === 'connected'
+                        ? 'Connected'
+                        : connection.status === 'connecting'
+                        ? 'Connecting...'
+                        : 'Disconnected'}
+                    </Text>
+                  </View>
+                  <View style={styles.headerButtons}>
+                    {connection.status === 'connected' ? (
+                      <TouchableOpacity
+                        style={[styles.headerButton, styles.disconnectButton]}
+                        onPress={() => disconnectTCP(connection.id)}
+                      >
+                        <PowerOff size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.headerButton,
+                          connection.status === 'connecting' &&
+                            styles.scanningButton,
+                        ]}
+                        onPress={() => connectTCP(connection.id)}
+                        disabled={connection.status === 'connecting'}
+                      >
+                        {connection.status === 'connecting' ? (
+                          <ActivityIndicator color="#2563eb" />
+                        ) : (
+                          <Network size={20} color="#2563eb" />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.headerButton, styles.removeDeviceButton]}
+                      onPress={() => removeTcpConnection(connection.id)}
+                    >
+                      <X size={20} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.tcpContent}>
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Host:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.host}
+                      onChangeText={(text) =>
+                        updateTcpConnection(connection.id, { host: text })
+                      }
+                      placeholder="Enter host (e.g., 192.168.1.100)"
+                      placeholderTextColor="#64748b"
+                      editable={connection.status === 'disconnected'}
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Port:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.port}
+                      onChangeText={(text) =>
+                        updateTcpConnection(connection.id, { port: text })
+                      }
+                      placeholder="Enter port (e.g., 8080)"
+                      placeholderTextColor="#64748b"
+                      keyboardType="numeric"
+                      editable={connection.status === 'disconnected'}
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Topic:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.topic}
+                      onChangeText={(text) =>
+                        updateTcpConnection(connection.id, { topic: text })
+                      }
+                      placeholder="Enter topic (e.g., tcp/test)"
+                      placeholderTextColor="#64748b"
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Test Message:</Text>
+                    <TextInput
+                      style={[styles.tcpInput, styles.tcpMessageInput]}
+                      value={connection.message}
+                      onChangeText={(text) =>
+                        updateTcpConnection(connection.id, { message: text })
+                      }
+                      placeholder="Enter test message"
+                      placeholderTextColor="#64748b"
+                      multiline
+                    />
+                  </View>
+
                   <TouchableOpacity
                     style={[
-                      styles.headerButton,
-                      tcpStatus === 'connecting' && styles.scanningButton,
+                      styles.tcpSendButton,
+                      (!connection.message.trim() ||
+                        !connection.topic.trim() ||
+                        connection.status !== 'connected') &&
+                        styles.buttonDisabled,
                     ]}
-                    onPress={connectTCP}
-                    disabled={tcpStatus === 'connecting'}
+                    onPress={() => sendTCPMessage(connection.id)}
+                    disabled={
+                      !connection.message.trim() ||
+                      !connection.topic.trim() ||
+                      connection.status !== 'connected'
+                    }
                   >
-                    {tcpStatus === 'connecting' ? (
-                      <ActivityIndicator color="#2563eb" />
-                    ) : (
-                      <Network size={20} color="#2563eb" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.tcpContent}>
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Host:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={tcpHost}
-                  onChangeText={setTcpHost}
-                  placeholder="Enter host (e.g., 192.168.1.100)"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Port:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={tcpPort}
-                  onChangeText={setTcpPort}
-                  placeholder="Enter port (e.g., 8080)"
-                  placeholderTextColor="#64748b"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Topic:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={tcpTopic}
-                  onChangeText={setTcpTopic}
-                  placeholder="Enter topic (e.g., tcp/test)"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Test Message:</Text>
-                <TextInput
-                  style={[styles.tcpInput, styles.tcpMessageInput]}
-                  value={tcpMessage}
-                  onChangeText={setTcpMessage}
-                  placeholder="Enter test message"
-                  placeholderTextColor="#64748b"
-                  multiline
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.tcpSendButton,
-                  (!tcpConnected || !tcpMessage.trim() || !tcpTopic.trim()) &&
-                    styles.buttonDisabled,
-                ]}
-                onPress={sendTCPMessage}
-                disabled={
-                  !tcpConnected || !tcpMessage.trim() || !tcpTopic.trim()
-                }
-              >
-                <Send size={20} color="#ffffff" />
-                <Text style={styles.tcpSendButtonText}>Send Test Message</Text>
-              </TouchableOpacity>
-
-              <View style={styles.tcpMessagesContainer}>
-                <Text style={styles.tcpMessagesTitle}>Connection Log:</Text>
-                <ScrollView style={styles.tcpMessagesList}>
-                  {tcpMessages.map((msg, index) => (
-                    <Text key={index} style={styles.tcpMessageText}>
-                      {msg}
+                    <Send size={20} color="#ffffff" />
+                    <Text style={styles.tcpSendButtonText}>
+                      Send Test Message
                     </Text>
-                  ))}
-                </ScrollView>
+                  </TouchableOpacity>
+
+                  <View style={styles.tcpMessagesContainer}>
+                    <Text style={styles.tcpMessagesTitle}>Connection Log:</Text>
+                    <ScrollView style={styles.tcpMessagesList}>
+                      {connection.messages.map((msg, index) => (
+                        <Text
+                          key={index}
+                          style={[
+                            styles.tcpMessageText,
+                            msg.includes('Sending:') &&
+                              styles.sendingMessageText,
+                            msg.includes('Sent successfully') &&
+                              styles.sentMessageText,
+                            msg.includes('Error') && styles.errorMessageText,
+                            msg.includes('Received:') &&
+                              styles.receivedMessageText,
+                          ]}
+                        >
+                          {msg}
+                        </Text>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </View>
               </View>
-            </View>
+            ))}
+
+            {tcpConnections.length === 0 && (
+              <View style={styles.noTcpConnections}>
+                <View style={styles.noTcpIcon}>
+                  <Network size={48} color="#64748b" />
+                </View>
+                <Text style={styles.noTcpText}>No TCP connections</Text>
+                <Text style={styles.noTcpSubtext}>
+                  Add a new TCP connection to start testing
+                </Text>
+                <TouchableOpacity
+                  style={styles.addTcpButton}
+                  onPress={addTcpConnection}
+                >
+                  <Text style={styles.addTcpButtonText}>
+                    Add TCP Connection
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </SettingSection>
 
@@ -2185,6 +2363,7 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     maxHeight: 200,
+    padding: 8,
   },
   messageText: {
     color: '#f8fafc',
@@ -2515,6 +2694,7 @@ const styles = StyleSheet.create({
   },
   tcpMessagesList: {
     maxHeight: 200,
+    padding: 8,
   },
   tcpMessageText: {
     color: '#f8fafc',
@@ -2523,6 +2703,22 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#1e293b',
     borderRadius: 8,
+  },
+  sendingMessageText: {
+    backgroundColor: '#1e40af',
+    color: '#ffffff',
+  },
+  sentMessageText: {
+    backgroundColor: '#064e3b',
+    color: '#ffffff',
+  },
+  errorMessageText: {
+    backgroundColor: '#7f1d1d',
+    color: '#ffffff',
+  },
+  receivedMessageText: {
+    backgroundColor: '#1e293b',
+    color: '#f8fafc',
   },
   deviceControlCard: {
     backgroundColor: '#1e293b',
@@ -2609,6 +2805,57 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   addDeviceControlButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tcpConnectionCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  tcpConnectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noTcpConnections: {
+    padding: 32,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  noTcpIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noTcpText: {
+    color: '#f8fafc',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  noTcpSubtext: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    maxWidth: width * 0.8,
+  },
+  addTcpButton: {
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 12,
+  },
+  addTcpButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
