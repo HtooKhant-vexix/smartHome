@@ -51,7 +51,8 @@ import { Device } from 'react-native-ble-plx';
 import { CustomAlert } from '../../components/CustomAlert';
 import Paho from 'paho-mqtt';
 import { useRouter } from 'expo-router';
-import TCPSocket from 'react-native-tcp-socket';
+import { TcpProtocolClient } from '../../services/tcpProtocol';
+import { topics as topicTable } from '../../constants/topicTable';
 
 const { width } = Dimensions.get('window');
 
@@ -199,7 +200,7 @@ export default function SettingsScreen() {
   const [selectedTcpConnection, setSelectedTcpConnection] = useState<
     string | null
   >(null);
-  const tcpClients = useRef<{ [key: string]: any }>({});
+  const tcpClients = useRef<{ [key: string]: TcpProtocolClient }>({});
 
   // Device Control Functions
   const toggleDeviceState = async (deviceId: string) => {
@@ -683,7 +684,7 @@ export default function SettingsScreen() {
 
   const removeTcpConnection = (id: string) => {
     if (tcpClients.current[id]) {
-      tcpClients.current[id].destroy();
+      tcpClients.current[id].disconnect();
       delete tcpClients.current[id];
     }
     setTcpConnections((prev) => prev.filter((conn) => conn.id !== id));
@@ -692,100 +693,78 @@ export default function SettingsScreen() {
     }
   };
 
-  const updateTcpConnection = (id: string, updates: Partial<TCPConnection>) => {
+  const updateTcpConnection = (
+    id: string,
+    updates:
+      | Partial<TCPConnection>
+      | ((conn: TCPConnection) => Partial<TCPConnection>)
+  ) => {
     setTcpConnections((prev) =>
-      prev.map((conn) => (conn.id === id ? { ...conn, ...updates } : conn))
+      prev.map((conn) =>
+        conn.id === id
+          ? {
+              ...conn,
+              ...(typeof updates === 'function' ? updates(conn) : updates),
+            }
+          : conn
+      )
     );
   };
 
   const connectTCP = async (id: string) => {
     const connection = tcpConnections.find((conn) => conn.id === id);
     if (!connection) return;
-
     try {
       updateTcpConnection(id, { status: 'connecting' });
-
       // Validate IP address format
       const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
       if (!ipRegex.test(connection.host)) {
         throw new Error('Invalid IP address format');
       }
-
       // Validate port number
       const port = parseInt(connection.port);
       if (isNaN(port) || port < 1 || port > 65535) {
         throw new Error('Invalid port number');
       }
-
-      // Create TCP client
-      const options = {
-        port: port,
-        host: connection.host,
-        timeout: 5000,
-      };
-
-      const socket = TCPSocket.createConnection(options, () => {
-        updateTcpConnection(id, { status: 'connected' });
-        updateTcpConnection(id, {
-          messages: [
-            ...connection.messages,
-            `Connected to ${connection.host}:${connection.port}`,
-          ],
-        });
-        showAlert('Success', 'TCP Connected successfully', 'success');
-      });
-
-      tcpClients.current[id] = socket;
-
-      // Set up message listener
-      socket.on('data', (data: string | Buffer) => {
-        try {
-          const message = data.toString().trim();
-          const payload = JSON.parse(message);
-
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `Received: ${JSON.stringify(payload)}`,
-            ],
-          });
-
-          // Handle device state updates
-          if (payload.type === 'state_update' && payload.deviceId) {
-            setDeviceStates((prev) => ({
-              ...prev,
-              [payload.deviceId]: payload.state === 'ON',
+      // Create protocol client
+      const client = new TcpProtocolClient();
+      tcpClients.current[id] = client;
+      client.connect(connection.host, port, `client-${id}`);
+      client.onMessage((event) => {
+        if (event.type === 'PUBLISH') {
+          try {
+            const payload = JSON.parse(event.data.toString());
+            updateTcpConnection(id, (conn) => ({
+              messages: [
+                ...(conn.messages || []),
+                `Received: ${JSON.stringify(payload)}`,
+              ],
+            }));
+            if (payload.type === 'state_update' && payload.deviceId) {
+              setDeviceStates((prev) => ({
+                ...prev,
+                [payload.deviceId]: payload.state === 'ON',
+              }));
+            }
+          } catch (e) {
+            updateTcpConnection(id, (conn) => ({
+              messages: [
+                ...(conn.messages || []),
+                `Received: ${event.data.toString()}`,
+              ],
             }));
           }
-        } catch (error) {
-          updateTcpConnection(id, {
-            messages: [...connection.messages, `Received: ${data.toString()}`],
-          });
         }
       });
-
-      // Handle connection events
-      socket.on('error', (error: Error) => {
-        updateTcpConnection(id, { status: 'disconnected' });
-        updateTcpConnection(id, {
-          messages: [
-            ...connection.messages,
-            `Connection error: ${error.message}`,
-          ],
-        });
-        showAlert('Error', `Failed to connect: ${error.message}`, 'error');
-        if (tcpClients.current[id]) {
-          tcpClients.current[id].destroy();
-          delete tcpClients.current[id];
-        }
+      // Success after connect
+      updateTcpConnection(id, { status: 'connected' });
+      updateTcpConnection(id, {
+        messages: [
+          ...connection.messages,
+          `Connected to ${connection.host}:${connection.port}`,
+        ],
       });
-
-      socket.on('close', () => {
-        updateTcpConnection(id, { status: 'disconnected' });
-        updateTcpConnection(id, {
-          messages: [...connection.messages, 'Connection closed'],
-        });
-      });
+      showAlert('Success', 'TCP Connected successfully', 'success');
     } catch (error) {
       updateTcpConnection(id, { status: 'disconnected' });
       const errorMessage =
@@ -795,7 +774,7 @@ export default function SettingsScreen() {
       });
       showAlert('Error', `Failed to connect: ${errorMessage}`, 'error');
       if (tcpClients.current[id]) {
-        tcpClients.current[id].destroy();
+        tcpClients.current[id].disconnect();
         delete tcpClients.current[id];
       }
     }
@@ -804,8 +783,7 @@ export default function SettingsScreen() {
   const disconnectTCP = (id: string) => {
     try {
       if (tcpClients.current[id]) {
-        tcpClients.current[id].end();
-        tcpClients.current[id].destroy();
+        tcpClients.current[id].disconnect();
         delete tcpClients.current[id];
       }
       updateTcpConnection(id, { status: 'disconnected' });
@@ -817,9 +795,8 @@ export default function SettingsScreen() {
       }
       showAlert('Success', 'TCP Disconnected successfully', 'success');
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      showAlert('Error', `Failed to disconnect: ${errorMessage}`, 'error');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      showAlert('Error', `Failed to disconnect: ${errorMsg}`, 'error');
       console.error('TCP Disconnection error:', error);
     }
   };
@@ -830,78 +807,45 @@ export default function SettingsScreen() {
       showAlert('Error', 'Connection not found', 'error');
       return;
     }
-
     if (!tcpClients.current[id]) {
       showAlert('Error', 'TCP client not initialized', 'error');
       return;
     }
-
     if (connection.status !== 'connected') {
       showAlert('Error', 'TCP not connected', 'error');
       return;
     }
-
     if (!connection.message.trim() || !connection.topic.trim()) {
       showAlert('Error', 'Message and topic cannot be empty', 'error');
       return;
     }
-
     try {
-      // Create message payload with only topic and message
-      const payload = {
-        topic: connection.topic,
-        message: connection.message,
-      };
-
-      // Convert payload to string and add newline
-      const messageString = JSON.stringify(payload) + '\n';
-
-      // Store the current message for logging
-      const currentMessage = connection.message;
-      const currentTopic = connection.topic;
-
-      // Immediately update UI to show message as sent
-      updateTcpConnection(id, {
+      // Map topic string to topic ID
+      const topicId = topicTable[connection.topic];
+      if (!topicId) {
+        showAlert('Error', 'Unknown topic for protocol', 'error');
+        return;
+      }
+      // Send using protocol
+      tcpClients.current[id].publish(topicId, connection.message);
+      // Log
+      updateTcpConnection(id, (conn) => ({
         messages: [
-          ...connection.messages,
-          `[${currentTopic}] Sending: ${currentMessage}`,
+          ...(conn.messages || []),
+          `[${connection.topic}] Sending: ${connection.message}`,
+          `[${connection.topic}] Sent successfully`,
         ],
-        message: '', // Clear the message input immediately
-      });
-
-      // Send message in the background
-      tcpClients.current[id].write(messageString, (error?: Error) => {
-        if (error) {
-          console.error('Error sending TCP message:', error);
-          // Update UI to show error if it occurs
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `[${currentTopic}] Error: ${error.message}`,
-            ],
-          });
-          showAlert('Error', 'Failed to send message', 'error');
-        } else {
-          // Add success message after sending
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `[${currentTopic}] Sending: ${currentMessage}`,
-              `[${currentTopic}] Sent successfully`,
-            ],
-          });
-        }
-      });
+        message: '',
+      }));
     } catch (error) {
-      console.error('Error in sendTCPMessage:', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      updateTcpConnection(id, {
+      updateTcpConnection(id, (conn) => ({
         messages: [
-          ...connection.messages,
+          ...(conn.messages || []),
           `Error sending control message: ${errorMessage}`,
         ],
-      });
+      }));
       showAlert('Error', `Failed to send message: ${errorMessage}`, 'error');
     }
   };
@@ -910,7 +854,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     return () => {
       Object.values(tcpClients.current).forEach((client) => {
-        client.destroy();
+        client.disconnect();
       });
     };
   }, []);
