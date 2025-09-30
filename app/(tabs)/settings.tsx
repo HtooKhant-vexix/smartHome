@@ -827,6 +827,11 @@ export default function SettingsScreen() {
         return;
       }
       // Send using protocol
+      console.log('[TCP SEND]', {
+        topic: connection.topic,
+        message: connection.message,
+        topicId,
+      });
       tcpClients.current[id].publish(topicId, connection.message);
       // Log
       updateTcpConnection(id, (conn) => ({
