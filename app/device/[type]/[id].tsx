@@ -46,6 +46,7 @@ import { useMqtt } from '../../../hooks/useMqtt';
 import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // MQTT topic scheme config for switches
 const MQTT_LOCATION = 'room1';
 const MQTT_CONTROLLER = 'light_control';
@@ -133,6 +134,61 @@ export default function DeviceDetailScreen() {
   const [swingUpDown, setSwingUpDown] = useState(false);
   const [swingLeftRight, setSwingLeftRight] = useState(false);
   const [acFanSpeed, setAcFanSpeed] = useState<'low' | 'med' | 'high'>('med');
+  const [acOnline, setAcOnline] = useState<boolean>(false);
+  const [acLastSeen, setAcLastSeen] = useState<string>('');
+  const AC_STATE_STORAGE_KEY = `${AC_BASE_TOPIC}:lastState`;
+
+  const applyAcState = (data: any) => {
+    if (typeof data !== 'object' || !data) return;
+    setAcLastSeen(new Date().toLocaleString());
+    if (typeof data.power === 'boolean') {
+      setAcPower(data.power as any);
+    }
+    if (typeof data.temperature === 'number') {
+      setAcTemp(Math.max(16, Math.min(30, Math.round(data.temperature))));
+    }
+    if (typeof data.mode === 'number') {
+      const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry'> = {
+        0: 'auto',
+        1: 'cool',
+        2: 'heat',
+        3: 'dry',
+      };
+      setAcMode(modeMap[data.mode] ?? 'auto');
+    }
+    if (typeof data.fan === 'number') {
+      const fanMap: Record<number, 'low' | 'med' | 'high'> = {
+        1: 'low',
+        2: 'med',
+        3: 'high',
+      };
+      setAcFanSpeed(fanMap[data.fan] ?? 'low');
+    }
+    if (typeof data.swing_v === 'boolean') {
+      setSwingUpDown(data.swing_v as any);
+    }
+    if (typeof data.swing_h === 'boolean') {
+      setSwingLeftRight(data.swing_h as any);
+    }
+  };
+
+  useEffect(() => {
+    if (deviceType !== 'smart-ac') return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(AC_STATE_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            if (typeof parsed.online === 'boolean') setAcOnline(parsed.online);
+            if (typeof parsed.lastSeen === 'string')
+              setAcLastSeen(parsed.lastSeen);
+            if (parsed.state) applyAcState(parsed.state);
+          }
+        }
+      } catch (_e) {}
+    })();
+  }, [deviceType]);
   const [customTime, setCustomTime] = useState({
     hour: '',
     minute: '',
@@ -294,6 +350,7 @@ export default function DeviceDetailScreen() {
       if (deviceType === 'smart-ac') {
         subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
         subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
+        subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
       }
 
       // Subscribe to sensor data topics if needed
@@ -316,11 +373,9 @@ export default function DeviceDetailScreen() {
 
   // connectMQTT is now handled by the useMqtt hook
 
-  const onMessageArrived = (message: any) => {
+  const onMessageArrived = (topic: string, payload: string) => {
+    console.log('onMessageArrived', topic, payload, '.......');
     try {
-      const topic = message.destinationName;
-      const payload = message.payloadString;
-
       // Handle state messages
       const lightStateTopic = buildTopic('light_switch', 'state');
       const acStateTopic = buildTopic('AC_switch', 'state');
@@ -336,38 +391,26 @@ export default function DeviceDetailScreen() {
       ) {
         try {
           const data = JSON.parse(payload);
-          if (typeof data.power === 'boolean') {
-            setAcPower(data.power as any);
-          }
-          if (typeof data.temperature === 'number') {
-            setAcTemp(Math.max(16, Math.min(30, Math.round(data.temperature))));
-          }
-          if (typeof data.mode === 'number') {
-            const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry'> = {
-              0: 'auto',
-              1: 'cool',
-              2: 'heat',
-              3: 'dry',
-            };
-            setAcMode(modeMap[data.mode] ?? 'auto');
-          }
-          if (typeof data.fan === 'number') {
-            const fanMap: Record<number, 'low' | 'med' | 'high'> = {
-              1: 'low',
-              2: 'med',
-              3: 'high',
-            };
-            setAcFanSpeed(fanMap[data.fan] ?? 'low');
-          }
-          if (typeof data.swing_v === 'boolean') {
-            setSwingUpDown(data.swing_v as any);
-          }
-          if (typeof data.swing_h === 'boolean') {
-            setSwingLeftRight(data.swing_h as any);
-          }
+          applyAcState(data);
+          const ts = new Date().toLocaleString();
+          AsyncStorage.setItem(
+            AC_STATE_STORAGE_KEY,
+            JSON.stringify({ online: acOnline, lastSeen: ts, state: data })
+          ).catch(() => undefined);
         } catch (_e) {
           // ignore non-JSON payloads
         }
+      }
+      // Handle AC LWT online/offline
+      else if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
+        const online = payload?.toLowerCase() === 'online';
+        setAcOnline(online);
+        const ts = new Date().toLocaleString();
+        setAcLastSeen(ts);
+        AsyncStorage.setItem(
+          AC_STATE_STORAGE_KEY,
+          JSON.stringify({ online, lastSeen: ts, state: null })
+        ).catch(() => undefined);
       }
       // Handle sensor data
       else if (topic === 'home/test/temp') {
@@ -873,18 +916,30 @@ export default function DeviceDetailScreen() {
           </View>
           <View style={styles.statusInfo}>
             <Text style={styles.statusText}>
-              {(deviceType === 'smart-ac' ? acPower : isActive)
+              {deviceType === 'smart-ac'
+                ? acOnline
+                  ? 'Online'
+                  : 'Offline'
+                : isActive
                 ? 'Active'
                 : 'Inactive'}
             </Text>
-            <Text style={styles.lastSeen}>{defaultDeviceStates.lastSeen}</Text>
+            <Text style={styles.lastSeen}>
+              {deviceType === 'smart-ac' && acLastSeen
+                ? `Last seen: ${acLastSeen}`
+                : defaultDeviceStates.lastSeen}
+            </Text>
             <View style={styles.mqttStatusContainer}>
               <View
                 style={[
                   styles.mqttStatusIndicator,
                   {
                     backgroundColor:
-                      mqttStatus === 'connected'
+                      deviceType === 'smart-ac'
+                        ? acOnline
+                          ? '#22c55e'
+                          : '#ef4444'
+                        : mqttStatus === 'connected'
                         ? '#22c55e'
                         : mqttStatus === 'connecting'
                         ? '#eab308'
@@ -893,7 +948,11 @@ export default function DeviceDetailScreen() {
                 ]}
               />
               <Text style={styles.mqttStatusText}>
-                {mqttStatus === 'connected'
+                {deviceType === 'smart-ac'
+                  ? acOnline
+                    ? 'Device Online'
+                    : 'Device Offline'
+                  : mqttStatus === 'connected'
                   ? 'Connected'
                   : mqttStatus === 'connecting'
                   ? 'Connecting...'

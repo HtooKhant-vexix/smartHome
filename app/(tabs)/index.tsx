@@ -110,8 +110,6 @@ export default function HomeScreen() {
   const { rooms } = useRooms();
   const router = useRouter();
 
-  console.log(rooms, rooms.length, '...................');
-
   const getIconComponent = (iconName: string) => {
     return ICON_MAP[iconName as keyof typeof ICON_MAP] || Home;
   };
