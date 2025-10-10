@@ -35,6 +35,11 @@ import { RoomCard } from '../../components/RoomCard';
 import { StatCard } from '../../components/StatCard';
 import { useRooms } from '../context/RoomContext';
 import AddRoomModal from '../components/AddRoomModal';
+import {
+  deviceIcons,
+  getDeviceTitle,
+  DeviceType,
+} from '../../constants/defaultData';
 
 const { width } = Dimensions.get('window');
 
@@ -210,30 +215,29 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.deviceGrid}>
-            <DeviceCard
-              title="Smart Light"
-              icon={Lightbulb}
-              deviceCount={4}
-              activeCount={2}
-            />
-            <DeviceCard
-              title="Smart AC"
-              icon={Wind}
-              deviceCount={2}
-              activeCount={1}
-            />
-            <DeviceCard
-              title="Smart TV"
-              icon={Tv}
-              deviceCount={2}
-              activeCount={1}
-            />
-            <DeviceCard
-              title="Air Purifier"
-              icon={Monitor}
-              deviceCount={2}
-              activeCount={1}
-            />
+            {(Object.keys(deviceIcons) as DeviceType[])
+              .map((t) => {
+                const deviceCount = rooms.reduce(
+                  (acc, r) => acc + (r.devices[t]?.length || 0),
+                  0
+                );
+                const activeCount = rooms.reduce(
+                  (acc, r) =>
+                    acc + (r.devices[t]?.filter((d) => d.isActive).length || 0),
+                  0
+                );
+                return { t, deviceCount, activeCount };
+              })
+              .filter(({ deviceCount }) => deviceCount > 0)
+              .map(({ t, deviceCount, activeCount }) => (
+                <DeviceCard
+                  key={t}
+                  title={getDeviceTitle(t)}
+                  icon={deviceIcons[t]}
+                  deviceCount={deviceCount}
+                  activeCount={activeCount}
+                />
+              ))}
           </View>
         )}
 

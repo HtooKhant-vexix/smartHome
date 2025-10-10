@@ -34,6 +34,7 @@ import {
   Minus,
   Save,
   Palette,
+  Thermometer,
 } from 'lucide-react-native';
 import {
   deviceIcons,
@@ -42,8 +43,14 @@ import {
   DeviceType,
 } from '../../../constants/defaultData';
 import { useMqtt } from '../../../hooks/useMqtt';
+import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
+// MQTT topic scheme config for switches
+const MQTT_LOCATION = 'room1';
+const MQTT_CONTROLLER = 'light_control';
+// AC controller follows mqttApi.md base topic and cmnd/stat/tele groups
+const AC_BASE_TOPIC = 'room1/ac';
 
 interface ControlItemProps {
   icon: React.ElementType;
@@ -93,6 +100,7 @@ export default function DeviceDetailScreen() {
     publish,
     subscribe,
     connect,
+    mqttService,
   } = useMqtt();
   const [mqttMessage, setMqttMessage] = useState('');
   const [alert, setAlert] = useState<{
@@ -116,6 +124,15 @@ export default function DeviceDetailScreen() {
     daily: 12.5,
     monthly: 375,
   });
+  // AC specific state
+  const [acPower, setAcPower] = useState(false);
+  const [acTemp, setAcTemp] = useState<number>(defaultDeviceStates.temperature);
+  const [acMode, setAcMode] = useState<'cool' | 'heat' | 'auto' | 'dry'>(
+    'cool'
+  );
+  const [swingUpDown, setSwingUpDown] = useState(false);
+  const [swingLeftRight, setSwingLeftRight] = useState(false);
+  const [acFanSpeed, setAcFanSpeed] = useState<'low' | 'med' | 'high'>('med');
   const [customTime, setCustomTime] = useState({
     hour: '',
     minute: '',
@@ -134,6 +151,33 @@ export default function DeviceDetailScreen() {
     x: center,
     y: center,
   });
+  // helpers to map current detail page device to MQTT devices
+  const getMqttDeviceKey = () => {
+    if (deviceType === 'smart-light') {
+      return 'light_switch';
+    }
+    if (deviceType === 'smart-ac') {
+      return 'AC_switch';
+    }
+    return 'socket_switch';
+  };
+  const buildTopic = (device: string, action: 'set' | 'state') =>
+    action === 'set'
+      ? topicHelpers.switchSet(device as any)
+      : topicHelpers.switchState(device as any);
+  const acCmnd = (suffix: string) => topicHelpers.acCmnd(suffix);
+  const acStat = (suffix: string) => topicHelpers.acStat(suffix);
+  const publishSet = (device: string, payload: string) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return false;
+    }
+    return publish(buildTopic(device, 'set'), payload);
+  };
 
   const handleColorChange = (newColor: { r: number; g: number; b: number }) => {
     if (!mqttConnected) {
@@ -243,9 +287,14 @@ export default function DeviceDetailScreen() {
     }
     // Subscribe to device-specific topics when connected
     if (mqttConnected) {
-      // Subscribe to device-specific control topic
-      subscribe(`office/ac/control`);
-      // subscribe(`office/${deviceType}/control`);
+      const key = getMqttDeviceKey();
+      subscribe(buildTopic(key, 'state'));
+
+      // Subscribe to AC state telemetry if viewing AC details
+      if (deviceType === 'smart-ac') {
+        subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
+        subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
+      }
 
       // Subscribe to sensor data topics if needed
       if (deviceType === ('sensor' as DeviceType)) {
@@ -256,6 +305,15 @@ export default function DeviceDetailScreen() {
     }
   }, [mqttConnected, deviceType, subscribe, connect]);
 
+  // Attach message handler to centralized MQTT service
+  useEffect(() => {
+    if (!mqttService) return;
+    mqttService.on('message', onMessageArrived);
+    return () => {
+      mqttService.off('message', onMessageArrived);
+    };
+  }, [mqttService]);
+
   // connectMQTT is now handled by the useMqtt hook
 
   const onMessageArrived = (message: any) => {
@@ -263,12 +321,52 @@ export default function DeviceDetailScreen() {
       const topic = message.destinationName;
       const payload = message.payloadString;
 
-      // Handle control messages
-      if (topic === `office/${deviceType}/control`) {
-        if (payload === 'ON') {
-          setIsActive(true as any);
-        } else if (payload === 'OFF') {
-          setIsActive(false as any);
+      // Handle state messages
+      const lightStateTopic = buildTopic('light_switch', 'state');
+      const acStateTopic = buildTopic('AC_switch', 'state');
+      if (topic === lightStateTopic) {
+        setIsActive(payload === 'ON' ? (true as any) : (false as any));
+      } else if (topic === acStateTopic) {
+        // reflect AC state if needed
+      }
+      // Handle AC JSON results/state
+      else if (
+        topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
+        topic === `${AC_BASE_TOPIC}/tele/STATE`
+      ) {
+        try {
+          const data = JSON.parse(payload);
+          if (typeof data.power === 'boolean') {
+            setAcPower(data.power as any);
+          }
+          if (typeof data.temperature === 'number') {
+            setAcTemp(Math.max(16, Math.min(30, Math.round(data.temperature))));
+          }
+          if (typeof data.mode === 'number') {
+            const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry'> = {
+              0: 'auto',
+              1: 'cool',
+              2: 'heat',
+              3: 'dry',
+            };
+            setAcMode(modeMap[data.mode] ?? 'auto');
+          }
+          if (typeof data.fan === 'number') {
+            const fanMap: Record<number, 'low' | 'med' | 'high'> = {
+              1: 'low',
+              2: 'med',
+              3: 'high',
+            };
+            setAcFanSpeed(fanMap[data.fan] ?? 'low');
+          }
+          if (typeof data.swing_v === 'boolean') {
+            setSwingUpDown(data.swing_v as any);
+          }
+          if (typeof data.swing_h === 'boolean') {
+            setSwingLeftRight(data.swing_h as any);
+          }
+        } catch (_e) {
+          // ignore non-JSON payloads
         }
       }
       // Handle sensor data
@@ -317,7 +415,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setIsActive(value as any);
-    publishMessage('control', value ? 'ON' : 'OFF');
+    publishSet('light_switch', value ? 'ON' : 'OFF');
   };
 
   const handleBrightnessChange = (value: number) => {
@@ -332,6 +430,83 @@ export default function DeviceDetailScreen() {
     const newBrightness = Math.max(0, Math.min(100, value));
     setBrightness(newBrightness);
     publishMessage('control', `BRIGHTNESS:${newBrightness}`);
+  };
+
+  // AC handlers
+  const handleAcPowerToggle = (value: boolean) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
+    setAcPower(value as any);
+    // Use AC cmnd POWER per mqttApi.md
+    publish(acCmnd('POWER'), value ? 'ON' : 'OFF');
+  };
+
+  const handleAcTempChange = (value: number) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
+    const t = Math.max(16, Math.min(30, Math.round(value)));
+    setAcTemp(t);
+    // Publish per mqttApi.md
+    publish(acCmnd('TEMPERATURE'), String(t));
+  };
+
+  const handleAcModeChange = (mode: 'cool' | 'heat' | 'auto' | 'dry') => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
+    setAcMode(mode);
+    const map: Record<typeof mode, string> = {
+      auto: '0',
+      cool: '1',
+      heat: '2',
+      dry: '3',
+    } as const;
+    publish(acCmnd('MODE'), map[mode]);
+  };
+
+  const handleSwingToggle = (axis: 'UD' | 'LR', value: boolean) => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
+    if (axis === 'UD') setSwingUpDown(value as any);
+    if (axis === 'LR') setSwingLeftRight(value as any);
+    publish(acCmnd(axis === 'UD' ? 'SWINGV' : 'SWINGH'), value ? 'ON' : 'OFF');
+  };
+
+  const handleAcFanChange = (speed: 'low' | 'med' | 'high') => {
+    if (!mqttConnected) {
+      showAlert(
+        'Error',
+        'MQTT not connected. Please check your connection.',
+        'error'
+      );
+      return;
+    }
+    setAcFanSpeed(speed);
+    const map: Record<typeof speed, string> = { low: '1', med: '2', high: '3' };
+    publish(acCmnd('FAN'), map[speed]);
   };
 
   const handleScheduleSet = (time: string) => {
@@ -698,7 +873,9 @@ export default function DeviceDetailScreen() {
           </View>
           <View style={styles.statusInfo}>
             <Text style={styles.statusText}>
-              {isActive ? 'Active' : 'Inactive'}
+              {(deviceType === 'smart-ac' ? acPower : isActive)
+                ? 'Active'
+                : 'Inactive'}
             </Text>
             <Text style={styles.lastSeen}>{defaultDeviceStates.lastSeen}</Text>
             <View style={styles.mqttStatusContainer}>
@@ -725,89 +902,247 @@ export default function DeviceDetailScreen() {
             </View>
           </View>
           <TouchableOpacity
-            style={[styles.toggleButton, isActive && styles.toggleButtonActive]}
-            onPress={() => handlePowerToggle(!isActive)}
+            style={[
+              styles.toggleButton,
+              (deviceType === 'smart-ac' ? acPower : isActive) &&
+                styles.toggleButtonActive,
+            ]}
+            onPress={() =>
+              deviceType === 'smart-ac'
+                ? handleAcPowerToggle(!acPower)
+                : handlePowerToggle(!isActive)
+            }
           >
-            <Power size={28} color={isActive ? 'white' : '#94a3b8'} />
+            <Power
+              size={28}
+              color={
+                (deviceType === 'smart-ac' ? acPower : isActive)
+                  ? 'white'
+                  : '#94a3b8'
+              }
+            />
           </TouchableOpacity>
         </View>
 
         {/* Quick Controls */}
-        <View style={styles.controlsContainer}>
-          <Text style={styles.sectionTitle}>Quick Controls</Text>
-          <View style={styles.controlsGrid}>
-            <TouchableOpacity
-              style={styles.controlItem}
-              onPress={() => setShowBrightnessModal(true)}
-            >
-              <View style={styles.controlIcon}>
-                <Sun size={24} color="#2563eb" />
-              </View>
-              <View style={styles.controlInfo}>
-                <Text style={styles.controlLabel}>Brightness</Text>
-                <Text style={styles.controlValue}>
-                  {brightness}
-                  <Text style={styles.controlUnit}>%</Text>
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.controlItem}
-              onPress={() => setShowColorModal(true)}
-            >
-              <View style={styles.controlIcon}>
-                <Palette size={24} color="#2563eb" />
-              </View>
-              <View style={styles.controlInfo}>
-                <Text style={styles.controlLabel}>Color</Text>
-                <View style={styles.colorIndicator}>
+        {deviceType === 'smart-ac' ? (
+          <View style={styles.controlsContainer}>
+            <Text style={styles.sectionTitle}>Aircon Controls</Text>
+            <View style={styles.controlsGrid}>
+              <View style={styles.controlItem}>
+                <View style={styles.controlIcon}>
+                  <Thermometer size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Temperature</Text>
                   <View
-                    style={[
-                      styles.colorDot,
-                      {
-                        backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
-                      },
-                    ]}
-                  />
-                  <Text style={styles.controlValue}>RGB</Text>
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={styles.brightnessButton}
+                      onPress={() => handleAcTempChange(acTemp - 1)}
+                    >
+                      <Minus size={20} color="white" />
+                    </TouchableOpacity>
+                    <Text style={styles.controlValue}>{acTemp}°C</Text>
+                    <TouchableOpacity
+                      style={styles.brightnessButton}
+                      onPress={() => handleAcTempChange(acTemp + 1)}
+                    >
+                      <Plus size={20} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                  {/* Slider removed to avoid duplicate temperature publishes */}
                 </View>
               </View>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.controlItem}
-              onPress={() => setShowScheduleModal(true)}
-            >
-              <View style={styles.controlIcon}>
-                <Timer size={24} color="#2563eb" />
+              <View style={styles.controlItem}>
+                <View style={styles.controlIcon}>
+                  <Sliders size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Mode</Text>
+                  <View
+                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+                  >
+                    {(['cool', 'heat', 'auto', 'dry'] as const).map((m) => (
+                      <TouchableOpacity
+                        key={m}
+                        onPress={() => handleAcModeChange(m)}
+                        style={[
+                          styles.modeChip,
+                          acMode === m && styles.modeChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.modeChipText,
+                            acMode === m && styles.modeChipTextActive,
+                          ]}
+                        >
+                          {m.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               </View>
-              <View style={styles.controlInfo}>
-                <Text style={styles.controlLabel}>Schedule</Text>
-                <Text style={styles.controlValue}>{schedule}</Text>
-              </View>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.controlItem}
-              onPress={() => setShowPowerModal(true)}
-            >
-              <View style={styles.controlIcon}>
-                <Zap size={24} color="#2563eb" />
+              <View style={styles.controlItem}>
+                <View style={styles.controlIcon}>
+                  <Wind size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Fan Speed</Text>
+                  <View
+                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+                  >
+                    {(['low', 'med', 'high'] as const).map((s) => (
+                      <TouchableOpacity
+                        key={s}
+                        onPress={() => handleAcFanChange(s)}
+                        style={[
+                          styles.modeChip,
+                          acFanSpeed === s && styles.modeChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.modeChipText,
+                            acFanSpeed === s && styles.modeChipTextActive,
+                          ]}
+                        >
+                          {s.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
               </View>
-              <View style={styles.controlInfo}>
-                <Text style={styles.controlLabel}>Power Usage</Text>
-                <Text style={styles.controlValue}>
-                  {powerUsage.current}
-                  <Text style={styles.controlUnit}>W</Text>
-                </Text>
+
+              <View style={styles.controlItem}>
+                <View style={styles.controlIcon}>
+                  <Wind size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Swing</Text>
+                  <View style={{ gap: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <Text style={styles.controlValue}>Up/Down</Text>
+                      <Switch
+                        value={swingUpDown}
+                        onValueChange={(v) => handleSwingToggle('UD', v)}
+                        trackColor={{ false: '#334155', true: '#2563eb' }}
+                        thumbColor="white"
+                      />
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <Text style={styles.controlValue}>Left/Right</Text>
+                      <Switch
+                        value={swingLeftRight}
+                        onValueChange={(v) => handleSwingToggle('LR', v)}
+                        trackColor={{ false: '#334155', true: '#2563eb' }}
+                        thumbColor="white"
+                      />
+                    </View>
+                  </View>
+                </View>
               </View>
-            </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.controlsContainer}>
+            <Text style={styles.sectionTitle}>Quick Controls</Text>
+            <View style={styles.controlsGrid}>
+              <TouchableOpacity
+                style={styles.controlItem}
+                onPress={() => setShowBrightnessModal(true)}
+              >
+                <View style={styles.controlIcon}>
+                  <Sun size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Brightness</Text>
+                  <Text style={styles.controlValue}>
+                    {brightness}
+                    <Text style={styles.controlUnit}>%</Text>
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.controlItem}
+                onPress={() => setShowColorModal(true)}
+              >
+                <View style={styles.controlIcon}>
+                  <Palette size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Color</Text>
+                  <View style={styles.colorIndicator}>
+                    <View
+                      style={[
+                        styles.colorDot,
+                        {
+                          backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
+                        },
+                      ]}
+                    />
+                    <Text style={styles.controlValue}>RGB</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.controlItem}
+                onPress={() => setShowScheduleModal(true)}
+              >
+                <View style={styles.controlIcon}>
+                  <Timer size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Schedule</Text>
+                  <Text style={styles.controlValue}>{schedule}</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.controlItem}
+                onPress={() => setShowPowerModal(true)}
+              >
+                <View style={styles.controlIcon}>
+                  <Zap size={24} color="#2563eb" />
+                </View>
+                <View style={styles.controlInfo}>
+                  <Text style={styles.controlLabel}>Power Usage</Text>
+                  <Text style={styles.controlValue}>
+                    {powerUsage.current}
+                    <Text style={styles.controlUnit}>W</Text>
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Device Settings */}
-        <View style={styles.settingsContainer}>
+        {/* <View style={styles.settingsContainer}>
           <Text style={styles.sectionTitle}>Device Settings</Text>
           <View style={styles.settingsList}>
             <View style={styles.settingItem}>
@@ -825,7 +1160,7 @@ export default function DeviceDetailScreen() {
               <Text style={styles.settingValue}>{temperature}°C</Text>
             </View>
           </View>
-        </View>
+        </View> */}
 
         {/* Device Info */}
         <View style={styles.infoContainer}>
@@ -1290,5 +1625,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter-Medium',
     color: '#94a3b8',
+  },
+  modeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modeChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  modeChipText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+  },
+  modeChipTextActive: {
+    color: '#ffffff',
   },
 });

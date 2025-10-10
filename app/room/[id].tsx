@@ -13,14 +13,24 @@ import { DeviceItem } from '../../components/DeviceItem';
 import { deviceIcons, DeviceType } from '../../constants/defaultData';
 import { useRooms } from '../context/RoomContext';
 import AddDeviceModal from '../components/AddDeviceModal';
+import { useMqtt } from '../../hooks/useMqtt';
+import { topicHelpers } from '../../constants/topicTable';
+
+const DEVICE_KEYS = [
+  'light_switch',
+  'AC_switch',
+  'socket_switch',
+  'rgb_light',
+] as const;
 
 export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const roomId = id as string;
-  const { rooms } = useRooms();
+  const { rooms, updateRoom } = useRooms();
   const room = rooms.find((r) => r.id === roomId);
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
+  const { isConnected: mqttConnected, publish, connect } = useMqtt();
 
   if (!room) {
     return null;
@@ -37,9 +47,45 @@ export default function RoomDetailScreen() {
   const activeDevices = allDevices.filter((device) => device.isActive).length;
   const totalDevices = allDevices.length;
 
-  const toggleDevice = (deviceType: DeviceType, deviceId: string) => {
-    // In a real app, this would update the state and sync with backend
-    console.log('Toggle device:', deviceType, deviceId);
+  const toggleDevice = (
+    deviceType: DeviceType,
+    deviceId: string,
+    deviceIndex: number
+  ) => {
+    if (!room) return;
+    // Find current state
+    const devices = room.devices[deviceType] || [];
+    const target = devices.find((d) => d.id === deviceId);
+    const nextActive = target
+      ? !(target.isActive === undefined ? false : target.isActive)
+      : true;
+
+    // Ensure MQTT connected (best-effort)
+    if (!mqttConnected) {
+      connect().catch(() => undefined);
+    }
+
+    if (deviceType === 'smart-light') {
+      const key = DEVICE_KEYS[deviceIndex] || 'light_switch';
+      publish(topicHelpers.switchSet(key), nextActive ? 'ON' : 'OFF');
+    } else if (deviceType === 'smart-ac') {
+      publish(topicHelpers.acCmnd('POWER'), nextActive ? 'ON' : 'OFF');
+    }
+
+    // Optimistically update local room state for responsive UI
+    const updatedDevices = devices.map((d) =>
+      d.id === deviceId
+        ? {
+            ...d,
+            isActive: nextActive,
+          }
+        : d
+    );
+    const updatedRoomDevices = {
+      ...room.devices,
+      [deviceType]: updatedDevices,
+    } as typeof room.devices;
+    updateRoom(roomId, { devices: updatedRoomDevices });
   };
 
   const handleDevicePress = (deviceType: DeviceType, deviceId: string) => {
@@ -113,7 +159,7 @@ export default function RoomDetailScreen() {
                 <ChevronRight size={20} color="#94a3b8" />
               </TouchableOpacity>
 
-              {devices.map((device) => (
+              {devices.map((device, idx) => (
                 <TouchableOpacity
                   key={device.id}
                   onPress={() =>
@@ -125,7 +171,7 @@ export default function RoomDetailScreen() {
                     icon={deviceIcons[deviceType as DeviceType]}
                     isActive={device.isActive}
                     onToggle={() =>
-                      toggleDevice(deviceType as DeviceType, device.id)
+                      toggleDevice(deviceType as DeviceType, device.id, idx)
                     }
                   />
                 </TouchableOpacity>

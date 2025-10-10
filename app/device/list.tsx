@@ -19,6 +19,18 @@ import {
 import { useRooms } from '../context/RoomContext';
 import AddDeviceModal from '../components/AddDeviceModal';
 import RoomSelectionModal from '../components/RoomSelectionModal';
+import { useMqtt } from '../../hooks/useMqtt';
+import { topicHelpers } from '../../constants/topicTable';
+
+const MQTT_LOCATION = 'room1';
+const MQTT_CONTROLLER = 'light_control';
+const AC_BASE_TOPIC = 'room1/ac';
+const DEVICE_KEYS = [
+  'light_switch',
+  'AC_switch',
+  'socket_switch',
+  'rgb_light',
+] as const;
 
 export default function DeviceListScreen() {
   const router = useRouter();
@@ -26,15 +38,29 @@ export default function DeviceListScreen() {
   const deviceType = type as DeviceType;
   const deviceTitle = getDeviceTitle(deviceType);
   const { rooms, updateRoom } = useRooms();
+  const { isConnected: mqttConnected, publish, connect } = useMqtt();
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
   const [isRoomSelectionModalVisible, setIsRoomSelectionModalVisible] =
     useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
 
-  const toggleDevice = (roomId: string, deviceId: string) => {
+  const topicForIndex = (index: number) => {
+    const key = DEVICE_KEYS[index] || 'light_switch';
+    return topicHelpers.switchSet(key);
+  };
+
+  const toggleDevice = (
+    roomId: string,
+    deviceId: string,
+    deviceIndex: number
+  ) => {
     const room = rooms.find((r) => r.id === roomId);
     if (room) {
       const devices = room.devices[deviceType] || [];
+      const target = devices.find((d) => d.id === deviceId);
+      const nextActive = target
+        ? !(target.isActive === undefined ? false : target.isActive)
+        : false;
       const updatedDevices = devices.map((device) =>
         device.id === deviceId
           ? {
@@ -51,6 +77,22 @@ export default function DeviceListScreen() {
       };
 
       updateRoom(roomId, { devices: updatedRoomDevices });
+
+      // MQTT publish for smart-light list using fixed mapping
+      if (deviceType === 'smart-light') {
+        if (!mqttConnected) {
+          // try auto-connect once
+          connect().catch(() => undefined);
+        }
+        const topic = topicForIndex(deviceIndex);
+        publish(topic, nextActive ? 'ON' : 'OFF');
+      } else if (deviceType === 'smart-ac') {
+        // AC list toggle controls POWER via cmnd topic
+        if (!mqttConnected) {
+          connect().catch(() => undefined);
+        }
+        publish(topicHelpers.acCmnd('POWER'), nextActive ? 'ON' : 'OFF');
+      }
     }
   };
 
@@ -138,7 +180,7 @@ export default function DeviceListScreen() {
                   <ChevronRight size={20} color="#94a3b8" />
                 </TouchableOpacity>
 
-                {devices.map((device) => (
+                {devices.map((device, idx) => (
                   <TouchableOpacity
                     key={device.id}
                     onPress={() =>
@@ -152,7 +194,7 @@ export default function DeviceListScreen() {
                       title={device.name}
                       icon={DeviceIcon}
                       isActive={device.isActive}
-                      onToggle={() => toggleDevice(room.id, device.id)}
+                      onToggle={() => toggleDevice(room.id, device.id, idx)}
                     />
                   </TouchableOpacity>
                 ))}
