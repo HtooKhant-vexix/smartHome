@@ -1,3 +1,7 @@
+// TCP Protocol Implementation - COMMENTED OUT
+// Using real MQTT instead of custom TCP protocol
+
+/*
 import TCPSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
 // import { EventEmitter } from 'events';
@@ -182,5 +186,149 @@ export class TcpProtocolClient {
     this.msgId = (this.msgId + 1) & 0xffff;
     if (this.msgId === 0) this.msgId = 1;
     return this.msgId;
+  }
+}
+*/
+
+// Real MQTT Implementation
+import Paho from 'paho-mqtt';
+
+export interface MqttConnection {
+  id: string;
+  host: string;
+  port: number;
+  clientId: string;
+  username?: string;
+  password?: string;
+  status: 'disconnected' | 'connecting' | 'connected';
+  messages: string[];
+  topic: string;
+  message: string;
+}
+
+export class MqttClient {
+  private client: any = null;
+  private connected = false;
+  private connection: MqttConnection;
+
+  constructor(connection: MqttConnection) {
+    this.connection = connection;
+  }
+
+  connect(): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.connection.status = 'connecting';
+
+        this.client = new Paho.Client(
+          this.connection.host,
+          this.connection.port,
+          this.connection.clientId
+        );
+
+        const options = {
+          onSuccess: () => {
+            this.connected = true;
+            this.connection.status = 'connected';
+            this.connection.messages.push(
+              `Connected to ${this.connection.host}:${this.connection.port}`
+            );
+            resolve(true);
+          },
+          onFailure: (err: any) => {
+            this.connected = false;
+            this.connection.status = 'disconnected';
+            this.connection.messages.push(
+              `Connection failed: ${err.errorMessage || 'Unknown error'}`
+            );
+            reject(err);
+          },
+          userName: this.connection.username,
+          password: this.connection.password,
+          useSSL: false,
+        };
+
+        this.client.connect(options);
+
+        // Set up message listener
+        this.client.onMessageArrived = (message: any) => {
+          try {
+            const payload = JSON.parse(message.payloadString);
+            this.connection.messages.push(
+              `[${message.destinationName}] Received: ${JSON.stringify(
+                payload
+              )}`
+            );
+          } catch (error) {
+            this.connection.messages.push(
+              `[${message.destinationName}] Received: ${message.payloadString}`
+            );
+          }
+        };
+
+        this.client.onConnectionLost = (responseObject: any) => {
+          if (responseObject.errorCode !== 0) {
+            this.connected = false;
+            this.connection.status = 'disconnected';
+            this.connection.messages.push('Connection lost');
+          }
+        };
+      } catch (error) {
+        this.connection.status = 'disconnected';
+        reject(error);
+      }
+    });
+  }
+
+  disconnect(): void {
+    if (this.client) {
+      this.client.disconnect();
+      this.client = null;
+      this.connected = false;
+      this.connection.status = 'disconnected';
+      this.connection.messages.push('Disconnected from server');
+    }
+  }
+
+  publish(topic: string, message: string): boolean {
+    if (!this.client || !this.connected) {
+      return false;
+    }
+
+    try {
+      const mqttMessage = new Paho.Message(message);
+      mqttMessage.destinationName = topic;
+      mqttMessage.qos = 1;
+      mqttMessage.retained = false;
+
+      this.client.send(mqttMessage);
+
+      this.connection.messages.push(`[${topic}] Sending: ${message}`);
+      this.connection.messages.push(`[${topic}] Sent successfully`);
+
+      return true;
+    } catch (error) {
+      this.connection.messages.push(`Error sending message: ${error}`);
+      return false;
+    }
+  }
+
+  subscribe(topic: string): boolean {
+    if (!this.client || !this.connected) {
+      return false;
+    }
+
+    try {
+      this.client.subscribe(topic);
+      this.connection.messages.push(`Subscribed to topic: ${topic}`);
+      return true;
+    } catch (error) {
+      this.connection.messages.push(`Error subscribing to topic: ${error}`);
+      return false;
+    }
+  }
+
+  isConnected(): boolean {
+    return this.connected;
   }
 }

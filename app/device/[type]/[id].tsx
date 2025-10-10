@@ -41,7 +41,7 @@ import {
   getDeviceTitle,
   DeviceType,
 } from '../../../constants/defaultData';
-import Paho from 'paho-mqtt';
+import { useMqtt } from '../../../hooks/useMqtt';
 import { CustomAlert } from '../../../components/CustomAlert';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 
@@ -87,12 +87,14 @@ export default function DeviceDetailScreen() {
   const [batteryLevel, setBatteryLevel] = useState(
     defaultDeviceStates.batteryLevel
   );
-  const [mqttConnected, setMqttConnected] = useState(false);
-  const [mqttStatus, setMqttStatus] = useState<
-    'disconnected' | 'connecting' | 'connected'
-  >('disconnected');
+  const {
+    isConnected: mqttConnected,
+    status: mqttStatus,
+    publish,
+    subscribe,
+    connect,
+  } = useMqtt();
   const [mqttMessage, setMqttMessage] = useState('');
-  const mqttClient = useRef<any>(null);
   const [alert, setAlert] = useState<{
     visible: boolean;
     title: string;
@@ -234,66 +236,27 @@ export default function DeviceDetailScreen() {
   };
 
   useEffect(() => {
-    connectMQTT();
-    return () => {
-      if (mqttClient.current) {
-        mqttClient.current.disconnect();
-      }
-    };
-  }, []);
-
-  const connectMQTT = () => {
-    try {
-      setMqttStatus('connecting');
-      mqttClient.current = new Paho.Client(
-        '192.168.1.100',
-        Number(9001),
-        `client-${Math.random().toString(16).substr(2, 8)}`
-      );
-
-      const options = {
-        onSuccess: () => {
-          setMqttStatus('connected');
-          setMqttConnected(true);
-          showAlert('Success', 'MQTT Connected successfully', 'success');
-          // Subscribe to device-specific control topic
-          mqttClient.current.subscribe(`office/ac/control`);
-          // mqttClient.current.subscribe(`office/${deviceType}/control`);
-          // Subscribe to sensor data topics if needed
-          if (deviceType === ('sensor' as DeviceType)) {
-            mqttClient.current.subscribe('home/test/temp');
-            mqttClient.current.subscribe('home/test/hum');
-            mqttClient.current.subscribe('home/test/lux');
-          }
-        },
-        onFailure: (err: any) => {
-          setMqttStatus('disconnected');
-          setMqttConnected(false);
-          showAlert(
-            'Error',
-            'Failed to connect to MQTT broker. Please check your connection.',
-            'error'
-          );
-          console.error('MQTT Connection failed:', err);
-        },
-        userName: 'detpos',
-        password: 'asdffdsa',
-        useSSL: false,
-      };
-
-      mqttClient.current.connect(options);
-      mqttClient.current.onMessageArrived = onMessageArrived;
-      mqttClient.current.onConnectionLost = onConnectionLost;
-    } catch (error) {
-      setMqttStatus('disconnected');
-      showAlert(
-        'Error',
-        'Failed to initialize MQTT client. Please check your connection.',
-        'error'
-      );
-      console.error('MQTT initialization error:', error);
+    if (!mqttConnected) {
+      // Try connecting to the centralized broker
+      connect();
+      return;
     }
-  };
+    // Subscribe to device-specific topics when connected
+    if (mqttConnected) {
+      // Subscribe to device-specific control topic
+      subscribe(`office/ac/control`);
+      // subscribe(`office/${deviceType}/control`);
+
+      // Subscribe to sensor data topics if needed
+      if (deviceType === ('sensor' as DeviceType)) {
+        subscribe('home/test/temp');
+        subscribe('home/test/hum');
+        subscribe('home/test/lux');
+      }
+    }
+  }, [mqttConnected, deviceType, subscribe, connect]);
+
+  // connectMQTT is now handled by the useMqtt hook
 
   const onMessageArrived = (message: any) => {
     try {
@@ -321,20 +284,10 @@ export default function DeviceDetailScreen() {
     }
   };
 
-  const onConnectionLost = (responseObject: any) => {
-    if (responseObject.errorCode !== 0) {
-      setMqttStatus('disconnected');
-      setMqttConnected(false);
-      showAlert(
-        'Error',
-        'MQTT Connection lost. Please check your connection.',
-        'error'
-      );
-    }
-  };
+  // onConnectionLost is now handled by the centralized MQTT service
 
   const publishMessage = (topic: string, message: any) => {
-    if (!mqttClient.current || !mqttConnected) {
+    if (!mqttConnected) {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -344,9 +297,10 @@ export default function DeviceDetailScreen() {
     }
 
     try {
-      const mqttMessage = new Paho.Message(message);
-      mqttMessage.destinationName = `office/${deviceType}/control`;
-      mqttClient.current.send(mqttMessage);
+      const success = publish(`office/${deviceType}/control`, message);
+      if (!success) {
+        throw new Error('Failed to publish message');
+      }
     } catch (error) {
       showAlert('Error', 'Failed to publish message', 'error');
       console.error('Publish error:', error);

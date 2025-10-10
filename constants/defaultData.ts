@@ -52,42 +52,44 @@ export const defaultRoomData: Record<string, Room> = {
       'smart-light': [
         { id: '1', name: 'Main Light', isActive: true },
         { id: '2', name: 'Lamp', isActive: false },
+        { id: '3', name: 'Lamp', isActive: true },
+        { id: '4', name: 'Lamp', isActive: false },
       ],
-      'smart-ac': [{ id: '1', name: 'Main AC', isActive: true }],
-      'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
-      'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
+      // 'smart-ac': [{ id: '1', name: 'Main AC', isActive: true }],
+      // 'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
+      // 'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
     },
   },
-  bedroom: {
-    name: 'Bedroom',
-    devices: {
-      'smart-light': [
-        { id: '3', name: 'Ceiling Light', isActive: true },
-        { id: '4', name: 'Night Lamp', isActive: false },
-      ],
-      'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
-      'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
-      'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
-    },
-  },
-  kitchen: {
-    name: 'Kitchen',
-    devices: {
-      'smart-light': [
-        // { id: '5', name: 'Main Light', isActive: true },
-        // { id: '6', name: 'Under Cabinet', isActive: true },
-      ],
-    },
-  },
-  bathroom: {
-    name: 'Bathroom',
-    devices: {
-      'smart-light': [
-        { id: '7', name: 'Main Light', isActive: false },
-        { id: '8', name: 'Mirror Light', isActive: true },
-      ],
-    },
-  },
+  // bedroom: {
+  //   name: 'Bedroom',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '3', name: 'Ceiling Light', isActive: true },
+  //       { id: '4', name: 'Night Lamp', isActive: false },
+  //     ],
+  //     'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
+  //     'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
+  //     'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
+  //   },
+  // },
+  // kitchen: {
+  //   name: 'Kitchen',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '5', name: 'Main Light', isActive: true },
+  //       // { id: '6', name: 'Under Cabinet', isActive: true },
+  //     ],
+  //   },
+  // },
+  // bathroom: {
+  //   name: 'Bathroom',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '7', name: 'Main Light', isActive: false },
+  //       { id: '8', name: 'Mirror Light', isActive: true },
+  //     ],
+  //   },
+  // },
 } as const;
 
 // Helper function to get device title
