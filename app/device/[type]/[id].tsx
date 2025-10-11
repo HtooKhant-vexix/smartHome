@@ -374,7 +374,7 @@ export default function DeviceDetailScreen() {
   // connectMQTT is now handled by the useMqtt hook
 
   const onMessageArrived = (topic: string, payload: string) => {
-    console.log('onMessageArrived', topic, payload, '.......');
+    // console.log('onMessageArrived', topic, payload, '.......');
     try {
       // Handle state messages
       const lightStateTopic = buildTopic('light_switch', 'state');

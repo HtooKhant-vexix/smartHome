@@ -27,7 +27,9 @@ export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
     }))
   );
 
-  const activeDevices = allDevices.filter((device) => device.isActive).length;
+  const activeDevices = allDevices.filter(
+    (device) => device.isActive === true
+  ).length;
   const totalDevices = allDevices.length;
 
   return (

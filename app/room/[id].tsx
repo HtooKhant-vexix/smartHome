@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ const DEVICE_KEYS = [
   'rgb_light',
 ] as const;
 
+const AC_BASE_TOPIC = 'room1/ac';
+
 export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -30,7 +32,13 @@ export default function RoomDetailScreen() {
   const { rooms, updateRoom } = useRooms();
   const room = rooms.find((r) => r.id === roomId);
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
-  const { isConnected: mqttConnected, publish, connect } = useMqtt();
+  const {
+    isConnected: mqttConnected,
+    publish,
+    connect,
+    subscribe,
+    mqttService,
+  } = useMqtt();
 
   if (!room) {
     return null;
@@ -100,6 +108,102 @@ export default function RoomDetailScreen() {
       pathname: '/device/list',
       params: { type: deviceType },
     });
+  };
+
+  // MQTT subscription and message handling
+  useEffect(() => {
+    if (!mqttConnected) {
+      connect();
+      return;
+    }
+
+    if (mqttConnected) {
+      // Subscribe to device state topics
+      const deviceKeys: Array<
+        'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
+      > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
+      deviceKeys.forEach((key) => {
+        subscribe(topicHelpers.switchState(key));
+      });
+
+      // Subscribe to AC state telemetry
+      subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
+      subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
+      subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
+    }
+  }, [mqttConnected, subscribe, connect]);
+
+  // Handle MQTT messages to update device states
+  useEffect(() => {
+    if (!mqttService) return;
+
+    const onMessageArrived = (topic: string, payload: string) => {
+      try {
+        // Handle device state messages
+        const deviceKeys: Array<
+          'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
+        > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
+        deviceKeys.forEach((key) => {
+          const stateTopic = topicHelpers.switchState(key);
+          if (topic === stateTopic) {
+            const isActive = payload === 'ON';
+            updateDeviceStatesFromMqtt(key, isActive);
+          }
+        });
+
+        // Handle AC state messages
+        if (
+          topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
+          topic === `${AC_BASE_TOPIC}/tele/STATE`
+        ) {
+          try {
+            const data = JSON.parse(payload);
+            if (typeof data.power === 'boolean') {
+              updateDeviceStatesFromMqtt('AC_switch', data.power);
+            }
+          } catch (_e) {
+            // ignore non-JSON payloads
+          }
+        }
+      } catch (error) {
+        console.error('Error handling MQTT message:', error);
+      }
+    };
+
+    mqttService.on('message', onMessageArrived);
+    return () => {
+      mqttService.off('message', onMessageArrived);
+    };
+  }, [mqttService]);
+
+  // Helper function to update device states from MQTT
+  const updateDeviceStatesFromMqtt = (deviceKey: string, isActive: boolean) => {
+    // Map device keys to device types
+    const deviceTypeMap: Record<string, DeviceType> = {
+      light_switch: 'smart-light',
+      AC_switch: 'smart-ac',
+      socket_switch: 'smart-light', // fallback
+      rgb_light: 'smart-light', // fallback
+    };
+
+    const targetDeviceType = deviceTypeMap[deviceKey];
+    if (!targetDeviceType) return;
+
+    // Update the current room's devices
+    const devices = room.devices[targetDeviceType];
+    if (devices && devices.length > 0) {
+      // Update the first device of this type (assuming single device per type per room)
+      const updatedDevices = devices.map((device, index) =>
+        index === 0 ? { ...device, isActive } : device
+      );
+
+      const updatedRoomDevices = {
+        ...room.devices,
+        [targetDeviceType]: updatedDevices,
+      };
+
+      updateRoom(roomId, { devices: updatedRoomDevices });
+    }
   };
 
   return (
