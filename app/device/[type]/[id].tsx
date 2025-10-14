@@ -112,6 +112,22 @@ export default function DeviceDetailScreen() {
       setIsActive(currentDevice.isActive || false);
     }
   }, [currentDevice?.isActive]);
+
+  // Load AC settings from store on mount
+  useEffect(() => {
+    if (deviceType === 'smart-ac' && currentDevice?.acSettings) {
+      const settings = currentDevice.acSettings;
+      setAcMode(settings.mode || 'cool');
+      setAcTemp(settings.temperature || 24);
+      setAcFanSpeed(settings.fanSpeed || 'auto');
+      setSwingUpDown(settings.swingV || false);
+      setSwingLeftRight(settings.swingH || false);
+      setAcOnline(settings.online || false);
+      setAcLastSeen(settings.lastSeen || '');
+      setAcPower(currentDevice.isActive || false);
+    }
+  }, [deviceType, currentDevice?.acSettings]);
+
   const [temperature, setTemperature] = useState(
     defaultDeviceStates.temperature
   );
@@ -164,41 +180,46 @@ export default function DeviceDetailScreen() {
   // AC specific state
   const [acPower, setAcPower] = useState(false);
   const [acTemp, setAcTemp] = useState<number>(defaultDeviceStates.temperature);
-  const [acMode, setAcMode] = useState<'cool' | 'heat' | 'auto' | 'dry'>(
-    'cool'
-  );
+  const [acMode, setAcMode] = useState<
+    'cool' | 'heat' | 'auto' | 'dry' | 'fan'
+  >('cool');
   const [swingUpDown, setSwingUpDown] = useState(false);
   const [swingLeftRight, setSwingLeftRight] = useState(false);
-  const [acFanSpeed, setAcFanSpeed] = useState<'low' | 'med' | 'high'>('med');
+  const [acFanSpeed, setAcFanSpeed] = useState<'auto' | 'low' | 'med' | 'high'>(
+    'auto'
+  );
   const [acOnline, setAcOnline] = useState<boolean>(false);
   const [acLastSeen, setAcLastSeen] = useState<string>('');
-  const AC_STATE_STORAGE_KEY = `${AC_BASE_TOPIC}:lastState`;
 
   const applyAcState = (data: any) => {
     if (typeof data !== 'object' || !data) return;
     setAcLastSeen(new Date().toLocaleString());
     if (typeof data.power === 'boolean') {
       setAcPower(data.power as any);
+      setIsActive(data.power as any); // ✅ Sync main toggle with Aircon power
     }
     if (typeof data.temperature === 'number') {
       setAcTemp(Math.max(16, Math.min(30, Math.round(data.temperature))));
     }
     if (typeof data.mode === 'number') {
-      const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry'> = {
-        0: 'auto',
-        1: 'cool',
-        2: 'heat',
-        3: 'dry',
-      };
+      const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry' | 'fan'> =
+        {
+          0: 'auto',
+          1: 'cool',
+          2: 'heat',
+          3: 'dry',
+          4: 'fan', // ✅ Added Fan mode per MQTT API docs
+        };
       setAcMode(modeMap[data.mode] ?? 'auto');
     }
     if (typeof data.fan === 'number') {
-      const fanMap: Record<number, 'low' | 'med' | 'high'> = {
+      const fanMap: Record<number, 'auto' | 'low' | 'med' | 'high'> = {
+        0: 'auto',
         1: 'low',
         2: 'med',
         3: 'high',
       };
-      setAcFanSpeed(fanMap[data.fan] ?? 'low');
+      setAcFanSpeed(fanMap[data.fan] ?? 'auto');
     }
     if (typeof data.swing_v === 'boolean') {
       setSwingUpDown(data.swing_v as any);
@@ -208,23 +229,9 @@ export default function DeviceDetailScreen() {
     }
   };
 
-  useEffect(() => {
-    if (deviceType !== 'smart-ac') return;
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(AC_STATE_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') {
-            if (typeof parsed.online === 'boolean') setAcOnline(parsed.online);
-            if (typeof parsed.lastSeen === 'string')
-              setAcLastSeen(parsed.lastSeen);
-            if (parsed.state) applyAcState(parsed.state);
-          }
-        }
-      } catch (_e) {}
-    })();
-  }, [deviceType]);
+  // ✅ Removed local AsyncStorage loading - Zustand store handles all persistence
+  // AC state is automatically loaded from AsyncStorage by Zustand persist middleware
+
   const [customTime, setCustomTime] = useState({
     hour: '',
     minute: '',
@@ -397,6 +404,7 @@ export default function DeviceDetailScreen() {
       }
 
       // Handle AC JSON results/state (for Aircon device only)
+      // ✅ State is now persisted in Zustand store automatically
       if (
         topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
         topic === `${AC_BASE_TOPIC}/tele/STATE`
@@ -404,26 +412,20 @@ export default function DeviceDetailScreen() {
         try {
           const data = JSON.parse(payload);
           applyAcState(data);
-          const ts = new Date().toLocaleString();
-          AsyncStorage.setItem(
-            AC_STATE_STORAGE_KEY,
-            JSON.stringify({ online: acOnline, lastSeen: ts, state: data })
-          ).catch(() => undefined);
+          // ✅ Removed duplicate AsyncStorage - Zustand store handles persistence
         } catch (_e) {
           // ignore non-JSON payloads
         }
       }
 
       // Handle AC LWT online/offline (for Aircon device only)
+      // ✅ Online status is now persisted in Zustand store automatically
       if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
         const online = payload?.toLowerCase() === 'online';
         setAcOnline(online);
         const ts = new Date().toLocaleString();
         setAcLastSeen(ts);
-        AsyncStorage.setItem(
-          AC_STATE_STORAGE_KEY,
-          JSON.stringify({ online, lastSeen: ts, state: null })
-        ).catch(() => undefined);
+        // ✅ Removed duplicate AsyncStorage - Zustand store handles persistence
       }
 
       // Handle sensor data
@@ -505,6 +507,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setAcPower(value as any);
+    setIsActive(value as any); // ✅ Sync main toggle with Aircon power
     setAcPowerStore(value);
   };
 
@@ -549,7 +552,7 @@ export default function DeviceDetailScreen() {
     setAcSwingStore(axis, value);
   };
 
-  const handleAcFanChange = (speed: 'low' | 'med' | 'high') => {
+  const handleAcFanChange = (speed: 'auto' | 'low' | 'med' | 'high') => {
     if (!mqttConnected) {
       showAlert(
         'Error',
@@ -1067,7 +1070,7 @@ export default function DeviceDetailScreen() {
                   <View
                     style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
                   >
-                    {(['low', 'med', 'high'] as const).map((s) => (
+                    {(['auto', 'low', 'med', 'high'] as const).map((s) => (
                       <TouchableOpacity
                         key={s}
                         onPress={() => handleAcFanChange(s)}

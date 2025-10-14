@@ -93,8 +93,8 @@ interface SmartHomeState {
   // AC Control
   setAcPower: (power: boolean) => void;
   setAcTemperature: (temp: number) => void;
-  setAcMode: (mode: 'cool' | 'heat' | 'auto' | 'dry') => void;
-  setAcFanSpeed: (speed: 'low' | 'med' | 'high') => void;
+  setAcMode: (mode: 'cool' | 'heat' | 'auto' | 'dry' | 'fan') => void;
+  setAcFanSpeed: (speed: 'auto' | 'low' | 'med' | 'high') => void;
   setAcSwing: (axis: 'UD' | 'LR', value: boolean) => void;
 }
 
@@ -111,7 +111,22 @@ const defaultRooms: Room[] = [
         { id: '3', name: 'socket switch', isActive: false },
         { id: '4', name: 'rgb light', isActive: false },
       ],
-      'smart-ac': [{ id: '1', name: 'Aircon', isActive: false }],
+      'smart-ac': [
+        {
+          id: '1',
+          name: 'Aircon',
+          isActive: false,
+          acSettings: {
+            mode: 'cool',
+            temperature: 24,
+            fanSpeed: 'auto',
+            swingV: false,
+            swingH: false,
+            online: false,
+            lastSeen: '',
+          },
+        },
+      ],
     },
   },
 ];
@@ -461,12 +476,14 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           cool: '1',
           heat: '2',
           dry: '3',
+          fan: '4', // ✅ Added Fan mode per MQTT API docs
         };
         mqttService.publish(topicHelpers.acCmnd('MODE'), map[mode]);
       },
 
       setAcFanSpeed: (speed) => {
         const map: Record<typeof speed, string> = {
+          auto: '0', // ✅ Auto fan speed per MQTT API docs
           low: '1',
           med: '2',
           high: '3',
@@ -492,48 +509,6 @@ export const useSmartHomeStore = create<SmartHomeState>()(
     }
   )
 );
-
-// MQTT Message Handler
-function handleMqttMessage(
-  topic: string,
-  payload: string,
-  set: any,
-  get: () => SmartHomeState
-) {
-  try {
-    // Handle device state messages
-    const deviceKeys: Array<
-      'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
-    > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
-
-    deviceKeys.forEach((key) => {
-      const stateTopic = topicHelpers.switchState(key);
-      if (topic === stateTopic) {
-        const isActive = payload === 'ON';
-        updateDeviceStatesFromMqtt(key, isActive, set, get);
-      }
-    });
-
-    // Handle Aircon state messages (smart-ac device, NOT AC_switch!)
-    if (
-      topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
-      topic === `${AC_BASE_TOPIC}/tele/STATE`
-    ) {
-      try {
-        const data = JSON.parse(payload);
-        if (typeof data.power === 'boolean') {
-          // Update the actual Aircon device (smart-ac, id: '1')
-          // NOT the AC_switch device (smart-light, id: '2')
-          updateDeviceStatesFromMqtt('aircon', data.power, set, get);
-        }
-      } catch (_e) {
-        // ignore non-JSON payloads
-      }
-    }
-  } catch (error) {
-    console.error('Error handling MQTT message:', error);
-  }
-}
 
 // Helper function to update device states from MQTT
 function updateDeviceStatesFromMqtt(
@@ -577,6 +552,175 @@ function updateDeviceStatesFromMqtt(
       return room;
     }),
   });
+}
+
+// Helper function to update Aircon full state from MQTT
+function updateAirconStateFromMqtt(
+  data: any,
+  set: any,
+  get: () => SmartHomeState
+) {
+  if (typeof data !== 'object' || !data) return;
+
+  const state = get();
+
+  // Map MQTT mode and fan values to app values
+  const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry' | 'fan'> = {
+    0: 'auto',
+    1: 'cool',
+    2: 'heat',
+    3: 'dry',
+    4: 'fan',
+  };
+
+  const fanMap: Record<number, 'auto' | 'low' | 'med' | 'high'> = {
+    0: 'auto',
+    1: 'low',
+    2: 'med',
+    3: 'high',
+  };
+
+  set({
+    rooms: state.rooms.map((room) => {
+      const devices = room.devices['smart-ac'];
+      if (devices && devices.length > 0) {
+        const hasAircon = devices.some((d) => d.id === '1');
+        if (!hasAircon) return room;
+
+        return {
+          ...room,
+          devices: {
+            ...room.devices,
+            'smart-ac': devices.map((device) => {
+              if (device.id !== '1') return device;
+
+              const updatedSettings = { ...device.acSettings };
+
+              // Update all AC settings from MQTT data
+              if (typeof data.power === 'boolean') {
+                // Update isActive (power state)
+              }
+              if (typeof data.mode === 'number' && modeMap[data.mode]) {
+                updatedSettings.mode = modeMap[data.mode];
+              }
+              if (typeof data.temperature === 'number') {
+                updatedSettings.temperature = Math.max(
+                  16,
+                  Math.min(30, Math.round(data.temperature))
+                );
+              }
+              if (typeof data.fan === 'number' && fanMap[data.fan]) {
+                updatedSettings.fanSpeed = fanMap[data.fan];
+              }
+              if (typeof data.swing_v === 'boolean') {
+                updatedSettings.swingV = data.swing_v;
+              }
+              if (typeof data.swing_h === 'boolean') {
+                updatedSettings.swingH = data.swing_h;
+              }
+              if (updatedSettings.lastSeen !== undefined) {
+                updatedSettings.lastSeen = new Date().toLocaleString();
+              }
+
+              return {
+                ...device,
+                isActive:
+                  typeof data.power === 'boolean'
+                    ? data.power
+                    : device.isActive,
+                acSettings: updatedSettings,
+              };
+            }),
+          },
+        };
+      }
+      return room;
+    }),
+  });
+}
+
+// Helper function to update Aircon online status from MQTT LWT
+function updateAirconOnlineStatus(
+  online: boolean,
+  set: any,
+  get: () => SmartHomeState
+) {
+  const state = get();
+
+  set({
+    rooms: state.rooms.map((room) => {
+      const devices = room.devices['smart-ac'];
+      if (devices && devices.length > 0) {
+        const hasAircon = devices.some((d) => d.id === '1');
+        if (!hasAircon) return room;
+
+        return {
+          ...room,
+          devices: {
+            ...room.devices,
+            'smart-ac': devices.map((device) => {
+              if (device.id !== '1') return device;
+
+              return {
+                ...device,
+                acSettings: {
+                  ...device.acSettings!,
+                  online,
+                  lastSeen: new Date().toLocaleString(),
+                },
+              };
+            }),
+          },
+        };
+      }
+      return room;
+    }),
+  });
+}
+
+// MQTT Message Handler (calls helper functions defined above)
+function handleMqttMessage(
+  topic: string,
+  payload: string,
+  set: any,
+  get: () => SmartHomeState
+) {
+  try {
+    // Handle device state messages
+    const deviceKeys: Array<
+      'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
+    > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
+
+    deviceKeys.forEach((key) => {
+      const stateTopic = topicHelpers.switchState(key);
+      if (topic === stateTopic) {
+        const isActive = payload === 'ON';
+        updateDeviceStatesFromMqtt(key, isActive, set, get);
+      }
+    });
+
+    // Handle Aircon state messages (smart-ac device, NOT AC_switch!)
+    if (
+      topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
+      topic === `${AC_BASE_TOPIC}/tele/STATE`
+    ) {
+      try {
+        const data = JSON.parse(payload);
+        // Update full Aircon state including settings
+        updateAirconStateFromMqtt(data, set, get);
+      } catch (_e) {
+        // ignore non-JSON payloads
+      }
+    }
+
+    // Handle Aircon LWT (Last Will and Testament) for online/offline status
+    if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
+      const online = payload?.toLowerCase() === 'online';
+      updateAirconOnlineStatus(online, set, get);
+    }
+  } catch (error) {
+    console.error('Error handling MQTT message:', error);
+  }
 }
 
 // Initialize MQTT on app start

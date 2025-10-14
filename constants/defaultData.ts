@@ -12,6 +12,16 @@ export interface Device {
   id: string;
   name: string;
   isActive: boolean;
+  // AC-specific properties (optional, only for smart-ac devices)
+  acSettings?: {
+    mode: 'auto' | 'cool' | 'heat' | 'dry' | 'fan';
+    temperature: number;
+    fanSpeed: 'auto' | 'low' | 'med' | 'high';
+    swingV: boolean;
+    swingH: boolean;
+    online?: boolean;
+    lastSeen?: string;
+  };
 }
 
 // Room interface
@@ -55,7 +65,22 @@ export const defaultRoomData: Record<string, Room> = {
         { id: '3', name: 'Socket Switch', isActive: false },
         { id: '4', name: 'RGB Light', isActive: false },
       ],
-      'smart-ac': [{ id: '1', name: 'Main AC', isActive: false }],
+      'smart-ac': [
+        {
+          id: '1',
+          name: 'Main AC',
+          isActive: false,
+          acSettings: {
+            mode: 'cool',
+            temperature: 24,
+            fanSpeed: 'auto',
+            swingV: false,
+            swingH: false,
+            online: false,
+            lastSeen: '',
+          },
+        },
+      ],
       // 'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
       // 'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
     },
@@ -90,7 +115,7 @@ export const defaultRoomData: Record<string, Room> = {
   //     ],
   //   },
   // },
-} as const;
+};
 
 // Helper function to get device title
 export const getDeviceTitle = (deviceType: DeviceType): string => {
