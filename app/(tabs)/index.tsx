@@ -113,6 +113,7 @@ export default function HomeScreen() {
   const rooms = useSmartHomeStore((state) => state.rooms);
   const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
   const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
+  const sensorData = useSmartHomeStore((state) => state.sensorData);
 
   const router = useRouter();
   const { type, id } = useLocalSearchParams();
@@ -127,7 +128,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Hello, Htoo</Text>
+            <Text style={styles.greeting}>Sixth Kendra</Text>
             <Text style={styles.subtitle}>Welcome back to your smart home</Text>
           </View>
           <TouchableOpacity style={styles.notificationButton}>
@@ -146,7 +147,14 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.temperature}>20°C</Text>
               <Text style={styles.weatherCondition}>Cloudy</Text>
-              <Text style={styles.weatherDate}>Tue, November 23</Text>
+              <Text style={styles.weatherDate}>
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </Text>
             </View>
             <Cloud size={60} color="white" />
           </View>
@@ -154,7 +162,11 @@ export default function HomeScreen() {
           <View style={styles.weatherStats}>
             <StatCard
               label="Indoor temp"
-              value="23° C"
+              value={
+                sensorData.temperature > 0
+                  ? `${sensorData.temperature.toFixed(1)}° C`
+                  : '--° C'
+              }
               icon={<Thermometer size={16} color="#2563eb" />}
             />
             <StatCard

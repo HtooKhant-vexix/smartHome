@@ -34,6 +34,12 @@ interface MqttState {
   status: MqttConnectionStatus;
 }
 
+interface SensorData {
+  temperature: number;
+  humidity: number;
+  lastUpdate: string;
+}
+
 interface SmartHomeState {
   // Rooms & Devices
   rooms: Room[];
@@ -41,6 +47,9 @@ interface SmartHomeState {
 
   // MQTT State
   mqtt: MqttState;
+
+  // Sensor Data
+  sensorData: SensorData;
 
   // Actions - Rooms
   addRoom: (room: Omit<Room, 'id'>) => void;
@@ -150,6 +159,11 @@ export const useSmartHomeStore = create<SmartHomeState>()(
       mqtt: {
         isConnected: false,
         status: 'disconnected',
+      },
+      sensorData: {
+        temperature: 0,
+        humidity: 0,
+        lastUpdate: '',
       },
 
       // Room Actions
@@ -356,6 +370,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           mqttService.subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
           mqttService.subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
           mqttService.subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
+          mqttService.subscribe(`${AC_BASE_TOPIC}/tele/SENSOR`);
 
           // Subscribe to sensor topics
           mqttService.subscribe('home/test/temp');
@@ -717,6 +732,24 @@ function handleMqttMessage(
     if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
       const online = payload?.toLowerCase() === 'online';
       updateAirconOnlineStatus(online, set, get);
+    }
+
+    // Handle Aircon sensor data
+    if (topic === `${AC_BASE_TOPIC}/tele/SENSOR`) {
+      try {
+        const data = JSON.parse(payload);
+        if (typeof data.temperature === 'number') {
+          set({
+            sensorData: {
+              temperature: data.temperature,
+              humidity: data.humidity || 0,
+              lastUpdate: new Date().toLocaleString(),
+            },
+          });
+        }
+      } catch (_e) {
+        // ignore non-JSON payloads
+      }
     }
   } catch (error) {
     console.error('Error handling MQTT message:', error);
