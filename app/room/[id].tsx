@@ -11,10 +11,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
 import { deviceIcons, DeviceType } from '../../constants/defaultData';
-import { useRooms } from '../context/RoomContext';
-import AddDeviceModal from '../components/AddDeviceModal';
-import { useMqtt } from '../../hooks/useMqtt';
-import { topicHelpers } from '../../constants/topicTable';
+import AddDeviceModal from '../_components/AddDeviceModal';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 
 const DEVICE_KEYS = [
   'light_switch',
@@ -29,16 +27,15 @@ export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const roomId = id as string;
-  const { rooms, updateRoom } = useRooms();
+
+  // Use Zustand store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const toggleDeviceWithMqtt = useSmartHomeStore(
+    (state) => state.toggleDeviceWithMqtt
+  );
   const room = rooms.find((r) => r.id === roomId);
+
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
-  const {
-    isConnected: mqttConnected,
-    publish,
-    connect,
-    subscribe,
-    mqttService,
-  } = useMqtt();
 
   if (!room) {
     return null;
@@ -60,40 +57,7 @@ export default function RoomDetailScreen() {
     deviceId: string,
     deviceIndex: number
   ) => {
-    if (!room) return;
-    // Find current state
-    const devices = room.devices[deviceType] || [];
-    const target = devices.find((d) => d.id === deviceId);
-    const nextActive = target
-      ? !(target.isActive === undefined ? false : target.isActive)
-      : true;
-
-    // Ensure MQTT connected (best-effort)
-    if (!mqttConnected) {
-      connect().catch(() => undefined);
-    }
-
-    if (deviceType === 'smart-light') {
-      const key = DEVICE_KEYS[deviceIndex] || 'light_switch';
-      publish(topicHelpers.switchSet(key), nextActive ? 'ON' : 'OFF');
-    } else if (deviceType === 'smart-ac') {
-      publish(topicHelpers.acCmnd('POWER'), nextActive ? 'ON' : 'OFF');
-    }
-
-    // Optimistically update local room state for responsive UI
-    const updatedDevices = devices.map((d) =>
-      d.id === deviceId
-        ? {
-            ...d,
-            isActive: nextActive,
-          }
-        : d
-    );
-    const updatedRoomDevices = {
-      ...room.devices,
-      [deviceType]: updatedDevices,
-    } as typeof room.devices;
-    updateRoom(roomId, { devices: updatedRoomDevices });
+    toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
   };
 
   const handleDevicePress = (deviceType: DeviceType, deviceId: string) => {
@@ -108,102 +72,6 @@ export default function RoomDetailScreen() {
       pathname: '/device/list',
       params: { type: deviceType },
     });
-  };
-
-  // MQTT subscription and message handling
-  useEffect(() => {
-    if (!mqttConnected) {
-      connect();
-      return;
-    }
-
-    if (mqttConnected) {
-      // Subscribe to device state topics
-      const deviceKeys: Array<
-        'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
-      > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
-      deviceKeys.forEach((key) => {
-        subscribe(topicHelpers.switchState(key));
-      });
-
-      // Subscribe to AC state telemetry
-      subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
-      subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
-      subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
-    }
-  }, [mqttConnected, subscribe, connect]);
-
-  // Handle MQTT messages to update device states
-  useEffect(() => {
-    if (!mqttService) return;
-
-    const onMessageArrived = (topic: string, payload: string) => {
-      try {
-        // Handle device state messages
-        const deviceKeys: Array<
-          'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
-        > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
-        deviceKeys.forEach((key) => {
-          const stateTopic = topicHelpers.switchState(key);
-          if (topic === stateTopic) {
-            const isActive = payload === 'ON';
-            updateDeviceStatesFromMqtt(key, isActive);
-          }
-        });
-
-        // Handle AC state messages
-        if (
-          topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
-          topic === `${AC_BASE_TOPIC}/tele/STATE`
-        ) {
-          try {
-            const data = JSON.parse(payload);
-            if (typeof data.power === 'boolean') {
-              updateDeviceStatesFromMqtt('AC_switch', data.power);
-            }
-          } catch (_e) {
-            // ignore non-JSON payloads
-          }
-        }
-      } catch (error) {
-        console.error('Error handling MQTT message:', error);
-      }
-    };
-
-    mqttService.on('message', onMessageArrived);
-    return () => {
-      mqttService.off('message', onMessageArrived);
-    };
-  }, [mqttService]);
-
-  // Helper function to update device states from MQTT
-  const updateDeviceStatesFromMqtt = (deviceKey: string, isActive: boolean) => {
-    // Map device keys to device types
-    const deviceTypeMap: Record<string, DeviceType> = {
-      light_switch: 'smart-light',
-      AC_switch: 'smart-ac',
-      socket_switch: 'smart-light', // fallback
-      rgb_light: 'smart-light', // fallback
-    };
-
-    const targetDeviceType = deviceTypeMap[deviceKey];
-    if (!targetDeviceType) return;
-
-    // Update the current room's devices
-    const devices = room.devices[targetDeviceType];
-    if (devices && devices.length > 0) {
-      // Update the first device of this type (assuming single device per type per room)
-      const updatedDevices = devices.map((device, index) =>
-        index === 0 ? { ...device, isActive } : device
-      );
-
-      const updatedRoomDevices = {
-        ...room.devices,
-        [targetDeviceType]: updatedDevices,
-      };
-
-      updateRoom(roomId, { devices: updatedRoomDevices });
-    }
   };
 
   return (

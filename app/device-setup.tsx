@@ -30,7 +30,7 @@ import { Device } from 'react-native-ble-plx';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { CustomAlert } from '@/components/CustomAlert';
-import { useRooms } from './context/RoomContext';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { DeviceType, deviceIcons } from '../constants/defaultData';
 
 const DEVICE_TYPES: { type: DeviceType; name: string }[] = [
@@ -57,7 +57,17 @@ interface ConfiguredDevice {
 export default function DeviceSetupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { rooms, updateRoom, loadConfiguredDevices } = useRooms();
+
+  // Use Zustand store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const addDevice = useSmartHomeStore((state) => state.addDevice);
+  const addConfiguredDevice = useSmartHomeStore(
+    (state) => state.addConfiguredDevice
+  );
+  const loadConfiguredDevices = useSmartHomeStore(
+    (state) => state.loadConfiguredDevices
+  );
+
   const [step, setStep] = useState<'device-info' | 'wifi-setup'>('device-info');
   const [name, setName] = useState('');
   const [selectedType, setSelectedType] = useState<DeviceType>('smart-light');
@@ -281,25 +291,16 @@ export default function DeviceSetupScreen() {
             JSON.stringify(devices)
           );
 
+          // Add configured device to store
+          addConfiguredDevice(deviceInfo);
+
           // Add device to room
-          const room = rooms.find((r) => r.id === roomId);
-          if (room) {
-            const newDevice = {
-              id: deviceId,
-              name: name.trim(),
-              isActive: true,
-            };
-
-            const updatedDevices = {
-              ...room.devices,
-              [selectedType]: [
-                ...(room.devices[selectedType] || []),
-                newDevice,
-              ],
-            };
-
-            updateRoom(roomId, { devices: updatedDevices });
-          }
+          const newDevice = {
+            id: deviceId,
+            name: name.trim(),
+            isActive: true,
+          };
+          addDevice(roomId, selectedType, newDevice);
 
           // Reload configured devices to update all rooms
           await loadConfiguredDevices();

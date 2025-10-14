@@ -15,7 +15,7 @@ export interface MqttConfig {
 
 // Default MQTT Configuration
 const DEFAULT_MQTT_CONFIG: MqttConfig = {
-  host: '192.168.0.103',
+  host: '192.168.0.100',
   // host: '192.168.1.146',
   port: 9001,
   clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,

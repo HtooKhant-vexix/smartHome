@@ -42,7 +42,7 @@ import {
   getDeviceTitle,
   DeviceType,
 } from '../../../constants/defaultData';
-import { useMqtt } from '../../../hooks/useMqtt';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -95,14 +95,27 @@ export default function DeviceDetailScreen() {
   const [batteryLevel, setBatteryLevel] = useState(
     defaultDeviceStates.batteryLevel
   );
-  const {
-    isConnected: mqttConnected,
-    status: mqttStatus,
-    publish,
-    subscribe,
-    connect,
-    mqttService,
-  } = useMqtt();
+
+  // Use Zustand store for MQTT
+  const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
+  const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
+  const publishMqtt = useSmartHomeStore((state) => state.publishMqtt);
+  const subscribeMqtt = useSmartHomeStore((state) => state.subscribeMqtt);
+  const connectMqtt = useSmartHomeStore((state) => state.connectMqtt);
+  const setAcPowerStore = useSmartHomeStore((state) => state.setAcPower);
+  const setAcTemperatureStore = useSmartHomeStore(
+    (state) => state.setAcTemperature
+  );
+  const setAcModeStore = useSmartHomeStore((state) => state.setAcMode);
+  const setAcFanSpeedStore = useSmartHomeStore((state) => state.setAcFanSpeed);
+  const setAcSwingStore = useSmartHomeStore((state) => state.setAcSwing);
+  const setDeviceBrightnessStore = useSmartHomeStore(
+    (state) => state.setDeviceBrightness
+  );
+  const setDeviceColorStore = useSmartHomeStore(
+    (state) => state.setDeviceColor
+  );
+
   const [mqttMessage, setMqttMessage] = useState('');
   const [alert, setAlert] = useState<{
     visible: boolean;
@@ -232,7 +245,7 @@ export default function DeviceDetailScreen() {
       );
       return false;
     }
-    return publish(buildTopic(device, 'set'), payload);
+    return publishMqtt(buildTopic(device, 'set'), payload);
   };
 
   const handleColorChange = (newColor: { r: number; g: number; b: number }) => {
@@ -245,10 +258,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setColor(newColor);
-    publishMessage(
-      'control',
-      `COLOR:${newColor.r},${newColor.g},${newColor.b}`
-    );
+    setDeviceColorStore(newColor.r, newColor.g, newColor.b);
   };
 
   const panResponder = useRef(
@@ -335,41 +345,8 @@ export default function DeviceDetailScreen() {
     };
   };
 
-  useEffect(() => {
-    if (!mqttConnected) {
-      // Try connecting to the centralized broker
-      connect();
-      return;
-    }
-    // Subscribe to device-specific topics when connected
-    if (mqttConnected) {
-      const key = getMqttDeviceKey();
-      subscribe(buildTopic(key, 'state'));
-
-      // Subscribe to AC state telemetry if viewing AC details
-      if (deviceType === 'smart-ac') {
-        subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
-        subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
-        subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
-      }
-
-      // Subscribe to sensor data topics if needed
-      if (deviceType === ('sensor' as DeviceType)) {
-        subscribe('home/test/temp');
-        subscribe('home/test/hum');
-        subscribe('home/test/lux');
-      }
-    }
-  }, [mqttConnected, deviceType, subscribe, connect]);
-
-  // Attach message handler to centralized MQTT service
-  useEffect(() => {
-    if (!mqttService) return;
-    mqttService.on('message', onMessageArrived);
-    return () => {
-      mqttService.off('message', onMessageArrived);
-    };
-  }, [mqttService]);
+  // MQTT subscriptions are now handled in the Zustand store
+  // The store automatically subscribes to all necessary topics on connection
 
   // connectMQTT is now handled by the useMqtt hook
 
@@ -438,7 +415,7 @@ export default function DeviceDetailScreen() {
     }
 
     try {
-      const success = publish(`office/${deviceType}/control`, message);
+      const success = publishMqtt(`office/${deviceType}/control`, message);
       if (!success) {
         throw new Error('Failed to publish message');
       }
@@ -472,7 +449,7 @@ export default function DeviceDetailScreen() {
     }
     const newBrightness = Math.max(0, Math.min(100, value));
     setBrightness(newBrightness);
-    publishMessage('control', `BRIGHTNESS:${newBrightness}`);
+    setDeviceBrightnessStore(newBrightness);
   };
 
   // AC handlers
@@ -486,8 +463,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setAcPower(value as any);
-    // Use AC cmnd POWER per mqttApi.md
-    publish(acCmnd('POWER'), value ? 'ON' : 'OFF');
+    setAcPowerStore(value);
   };
 
   const handleAcTempChange = (value: number) => {
@@ -501,8 +477,7 @@ export default function DeviceDetailScreen() {
     }
     const t = Math.max(16, Math.min(30, Math.round(value)));
     setAcTemp(t);
-    // Publish per mqttApi.md
-    publish(acCmnd('TEMPERATURE'), String(t));
+    setAcTemperatureStore(t);
   };
 
   const handleAcModeChange = (mode: 'cool' | 'heat' | 'auto' | 'dry') => {
@@ -515,13 +490,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setAcMode(mode);
-    const map: Record<typeof mode, string> = {
-      auto: '0',
-      cool: '1',
-      heat: '2',
-      dry: '3',
-    } as const;
-    publish(acCmnd('MODE'), map[mode]);
+    setAcModeStore(mode);
   };
 
   const handleSwingToggle = (axis: 'UD' | 'LR', value: boolean) => {
@@ -535,7 +504,7 @@ export default function DeviceDetailScreen() {
     }
     if (axis === 'UD') setSwingUpDown(value as any);
     if (axis === 'LR') setSwingLeftRight(value as any);
-    publish(acCmnd(axis === 'UD' ? 'SWINGV' : 'SWINGH'), value ? 'ON' : 'OFF');
+    setAcSwingStore(axis, value);
   };
 
   const handleAcFanChange = (speed: 'low' | 'med' | 'high') => {
@@ -548,8 +517,7 @@ export default function DeviceDetailScreen() {
       return;
     }
     setAcFanSpeed(speed);
-    const map: Record<typeof speed, string> = { low: '1', med: '2', high: '3' };
-    publish(acCmnd('FAN'), map[speed]);
+    setAcFanSpeedStore(speed);
   };
 
   const handleScheduleSet = (time: string) => {

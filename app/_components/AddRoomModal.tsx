@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { X } from 'lucide-react-native';
-import { useRooms } from '../context/RoomContext';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import {
   Home,
   DoorOpen,
@@ -44,7 +44,7 @@ interface AddRoomModalProps {
 const AddRoomModal: React.FC<AddRoomModalProps> = ({ visible, onClose }) => {
   const [name, setName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('Home');
-  const { addRoom } = useRooms();
+  const addRoom = useSmartHomeStore((state) => state.addRoom);
 
   const handleSubmit = () => {
     if (name.trim()) {
