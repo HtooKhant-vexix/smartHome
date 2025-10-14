@@ -50,10 +50,10 @@ export const defaultRoomData: Record<string, Room> = {
     name: 'Living Room',
     devices: {
       'smart-light': [
-        { id: '1', name: 'Main Light', isActive: false },
-        { id: '2', name: 'Bulb 1', isActive: false },
-        { id: '3', name: 'Bulb 2', isActive: false },
-        { id: '4', name: 'Bulb 3', isActive: false },
+        { id: '1', name: 'Light Switch', isActive: false },
+        { id: '2', name: 'AC Switch', isActive: false },
+        { id: '3', name: 'Socket Switch', isActive: false },
+        { id: '4', name: 'RGB Light', isActive: false },
       ],
       'smart-ac': [{ id: '1', name: 'Main AC', isActive: false }],
       // 'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],

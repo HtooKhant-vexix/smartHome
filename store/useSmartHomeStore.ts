@@ -363,7 +363,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         });
 
         mqttService.on('message', (topic: string, payload: string) => {
-          console.log('MQTT Message:', topic, payload);
+          console.log('MQTT Message: -> ', topic, payload);
           handleMqttMessage(topic, payload, set, get);
         });
 
@@ -514,7 +514,7 @@ function handleMqttMessage(
       }
     });
 
-    // Handle AC state messages
+    // Handle Aircon state messages (smart-ac device, NOT AC_switch!)
     if (
       topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
       topic === `${AC_BASE_TOPIC}/tele/STATE`
@@ -522,7 +522,9 @@ function handleMqttMessage(
       try {
         const data = JSON.parse(payload);
         if (typeof data.power === 'boolean') {
-          updateDeviceStatesFromMqtt('AC_switch', data.power, set, get);
+          // Update the actual Aircon device (smart-ac, id: '1')
+          // NOT the AC_switch device (smart-light, id: '2')
+          updateDeviceStatesFromMqtt('aircon', data.power, set, get);
         }
       } catch (_e) {
         // ignore non-JSON payloads
@@ -540,28 +542,34 @@ function updateDeviceStatesFromMqtt(
   set: any,
   get: () => SmartHomeState
 ) {
-  const deviceTypeMap: Record<string, DeviceType> = {
-    light_switch: 'smart-light',
-    AC_switch: 'smart-ac',
-    socket_switch: 'smart-light',
-    rgb_light: 'smart-light',
+  // Map MQTT device key to device type and ID
+  const deviceKeyToConfig: Record<string, { type: DeviceType; id: string }> = {
+    light_switch: { type: 'smart-light', id: '1' },
+    AC_switch: { type: 'smart-light', id: '2' },
+    socket_switch: { type: 'smart-light', id: '3' },
+    rgb_light: { type: 'smart-light', id: '4' },
+    aircon: { type: 'smart-ac', id: '1' }, // Actual Aircon device
   };
 
-  const targetDeviceType = deviceTypeMap[deviceKey];
-  if (!targetDeviceType) return;
+  const config = deviceKeyToConfig[deviceKey];
+  if (!config) return;
 
   const state = get();
 
   set({
     rooms: state.rooms.map((room) => {
-      const devices = room.devices[targetDeviceType];
+      const devices = room.devices[config.type];
       if (devices && devices.length > 0) {
+        // Update only the specific device with matching ID
+        const hasDevice = devices.some((d) => d.id === config.id);
+        if (!hasDevice) return room;
+
         return {
           ...room,
           devices: {
             ...room.devices,
-            [targetDeviceType]: devices.map((device, index) =>
-              index === 0 ? { ...device, isActive } : device
+            [config.type]: devices.map((device) =>
+              device.id === config.id ? { ...device, isActive } : device
             ),
           },
         };

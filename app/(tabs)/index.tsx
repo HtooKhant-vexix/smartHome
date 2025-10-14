@@ -116,8 +116,6 @@ export default function HomeScreen() {
 
   const router = useRouter();
   const { type, id } = useLocalSearchParams();
-  console.log(type);
-  console.log('is connected', mqttConnected);
 
   const getIconComponent = (iconName: string) => {
     return ICON_MAP[iconName as keyof typeof ICON_MAP] || Home;

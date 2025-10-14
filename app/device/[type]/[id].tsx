@@ -85,10 +85,33 @@ export default function DeviceDetailScreen() {
 
   const deviceTitle = getDeviceTitle(deviceType);
 
-  const [isActive, setIsActive] = useState(false);
+  // Get device details from store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const currentDevice = rooms
+    .flatMap((room) =>
+      Object.entries(room.devices).flatMap(([type, devices]) =>
+        devices.map((device) => ({
+          ...device,
+          type: type as DeviceType,
+          roomId: room.id,
+        }))
+      )
+    )
+    .find((device) => device.id === deviceId && device.type === deviceType);
+
+  const deviceName = currentDevice?.name || 'Unknown Device';
+
+  const [isActive, setIsActive] = useState(currentDevice?.isActive || false);
   const [brightness, setBrightness] = useState<number>(
     defaultDeviceStates.brightness
   );
+
+  // Sync local state with store state
+  useEffect(() => {
+    if (currentDevice) {
+      setIsActive(currentDevice.isActive || false);
+    }
+  }, [currentDevice?.isActive]);
   const [temperature, setTemperature] = useState(
     defaultDeviceStates.temperature
   );
@@ -222,12 +245,23 @@ export default function DeviceDetailScreen() {
   });
   // helpers to map current detail page device to MQTT devices
   const getMqttDeviceKey = () => {
-    if (deviceType === 'smart-light') {
-      return 'light_switch';
-    }
+    // Aircon uses a completely different MQTT structure (room1/ac/cmnd/*)
+    // It doesn't use the light_control topics at all
     if (deviceType === 'smart-ac') {
-      return 'AC_switch';
+      return null; // Aircon doesn't use these MQTT keys
     }
+
+    // For smart-light type, map device ID to specific MQTT key
+    if (deviceType === 'smart-light') {
+      const deviceIdToMqttKey: Record<string, string> = {
+        '1': 'light_switch',
+        '2': 'AC_switch', // Auto Current switch (NOT aircon!)
+        '3': 'socket_switch',
+        '4': 'rgb_light',
+      };
+      return (deviceIdToMqttKey[deviceId] || 'light_switch') as any;
+    }
+
     return 'socket_switch';
   };
   const buildTopic = (device: string, action: 'set' | 'state') =>
@@ -353,16 +387,17 @@ export default function DeviceDetailScreen() {
   const onMessageArrived = (topic: string, payload: string) => {
     // console.log('onMessageArrived', topic, payload, '.......');
     try {
-      // Handle state messages
-      const lightStateTopic = buildTopic('light_switch', 'state');
-      const acStateTopic = buildTopic('AC_switch', 'state');
-      if (topic === lightStateTopic) {
-        setIsActive(payload === 'ON' ? (true as any) : (false as any));
-      } else if (topic === acStateTopic) {
-        // reflect AC state if needed
+      // Handle state messages for smart-light devices only
+      const deviceKey = getMqttDeviceKey();
+      if (deviceKey) {
+        const deviceStateTopic = buildTopic(deviceKey, 'state');
+        if (topic === deviceStateTopic) {
+          setIsActive(payload === 'ON' ? (true as any) : (false as any));
+        }
       }
-      // Handle AC JSON results/state
-      else if (
+
+      // Handle AC JSON results/state (for Aircon device only)
+      if (
         topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
         topic === `${AC_BASE_TOPIC}/tele/STATE`
       ) {
@@ -378,8 +413,9 @@ export default function DeviceDetailScreen() {
           // ignore non-JSON payloads
         }
       }
-      // Handle AC LWT online/offline
-      else if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
+
+      // Handle AC LWT online/offline (for Aircon device only)
+      if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
         const online = payload?.toLowerCase() === 'online';
         setAcOnline(online);
         const ts = new Date().toLocaleString();
@@ -389,12 +425,15 @@ export default function DeviceDetailScreen() {
           JSON.stringify({ online, lastSeen: ts, state: null })
         ).catch(() => undefined);
       }
+
       // Handle sensor data
-      else if (topic === 'home/test/temp') {
+      if (topic === 'home/test/temp') {
         setTemperature(parseFloat(payload) as any);
-      } else if (topic === 'home/test/hum') {
+      }
+      if (topic === 'home/test/hum') {
         // Handle humidity if needed
-      } else if (topic === 'home/test/lux') {
+      }
+      if (topic === 'home/test/lux') {
         // Handle light level if needed
       }
     } catch (error) {
@@ -435,7 +474,10 @@ export default function DeviceDetailScreen() {
       return;
     }
     setIsActive(value as any);
-    publishSet('light_switch', value ? 'ON' : 'OFF');
+    const deviceKey = getMqttDeviceKey();
+    if (deviceKey) {
+      publishSet(deviceKey, value ? 'ON' : 'OFF');
+    }
   };
 
   const handleBrightnessChange = (value: number) => {
@@ -868,10 +910,7 @@ export default function DeviceDetailScreen() {
           >
             <ArrowLeft size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.deviceTitle}>
-            {deviceTitle}
-            {/* {deviceId} */}
-          </Text>
+          <Text style={styles.deviceTitle}>{deviceName}</Text>
           <TouchableOpacity style={styles.settingsButton}>
             <Settings size={24} color="#2563eb" />
           </TouchableOpacity>

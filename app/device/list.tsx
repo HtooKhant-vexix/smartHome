@@ -42,6 +42,14 @@ export default function DeviceListScreen() {
     deviceId: string,
     deviceIndex: number
   ) => {
+    console.log(
+      'toggleDevice: room_Id ->',
+      roomId,
+      '| device_Id->',
+      deviceId,
+      '| device_Index->',
+      deviceIndex
+    );
     toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
   };
 
@@ -120,6 +128,7 @@ export default function DeviceListScreen() {
           {rooms.map((room) => {
             const devices = room.devices[deviceType] || [];
             if (devices.length === 0) return null;
+            console.log('devices ->', devices);
 
             return (
               <View key={room.id} style={styles.roomSection}>
