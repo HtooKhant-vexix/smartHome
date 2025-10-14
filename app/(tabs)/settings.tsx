@@ -1397,7 +1397,7 @@ export default function SettingsScreen() {
         </SettingSection> */}
 
         {/* Centralized MQTT Configuration Section */}
-        {/* <SettingSection title="MQTT Configuration">
+        <SettingSection title="MQTT Configuration">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1513,7 +1513,7 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        </SettingSection> */}
+        </SettingSection>
 
         {/* MQTT Connection Test Section */}
         {/* <SettingSection title="MQTT Connection Test">
