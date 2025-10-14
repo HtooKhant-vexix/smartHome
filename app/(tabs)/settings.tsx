@@ -837,10 +837,10 @@ export default function SettingsScreen() {
         </SettingSection>
 
         {/* Bluetooth Section */}
-        <SettingSection title="Bluetooth">
-          {/* Bluetooth Status Card */}
-          <View style={styles.bluetoothCard}>
-            <View style={styles.bluetoothHeader}>
+        {/* <SettingSection title="Bluetooth"> */}
+        {/* Bluetooth Status Card */}
+        {/* <View style={styles.bluetoothCard}> */}
+        {/* <View style={styles.bluetoothHeader}>
               <View style={styles.bluetoothStatus}>
                 <View
                   style={[
@@ -888,10 +888,10 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </View> */}
 
-            {/* Connected Devices */}
-            {connectedDevices.length > 0 ? (
+        {/* Connected Devices */}
+        {/* {connectedDevices.length > 0 ? (
               <View style={styles.connectedDevices}>
                 <Text style={styles.sectionSubtitle}>Connected Devices</Text>
                 {connectedDevices.map((device) => (
@@ -942,11 +942,11 @@ export default function SettingsScreen() {
                   Connect to a device from the available devices list below
                 </Text>
               </View>
-            )}
-          </View>
+            )} */}
+        {/* </View> */}
 
-          {/* Available Devices */}
-          {devices.length > 0 && (
+        {/* Available Devices */}
+        {/* {devices.length > 0 && (
             <View style={styles.deviceList}>
               <Text style={styles.sectionSubtitle1}>Available Devices</Text>
               {devices.map((device) => (
@@ -983,10 +983,10 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          )}
+          )} */}
 
-          {/* No Devices Found */}
-          {!isScanning &&
+        {/* No Devices Found */}
+        {/* {!isScanning &&
             devices.length === 0 &&
             connectedDevices.length === 0 && (
               <View style={styles.noDevices}>
@@ -1012,11 +1012,11 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            )}
-        </SettingSection>
+            )} */}
+        {/* </SettingSection> */}
 
         {/* MQTT Section */}
-        <SettingSection title="MQTT Connection">
+        {/* <SettingSection title="MQTT Connection">
           <View style={styles.mqttCard}>
             <View style={styles.mqttHeader}>
               <View style={styles.mqttStatus}>
@@ -1115,10 +1115,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Device Control Section */}
-        <SettingSection title="Device Control">
+        {/* <SettingSection title="Device Control">
           <View style={styles.deviceControlCard}>
             <View style={styles.deviceControlHeader}>
               <View style={styles.deviceControlStatus}>
@@ -1207,10 +1207,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* WiFi Scan Section */}
-        <SettingSection title="WiFi Networks">
+        {/* <SettingSection title="WiFi Networks">
           <View style={styles.wifiCard}>
             <View style={styles.wifiHeader}>
               <View style={styles.wifiStatus}>
@@ -1305,10 +1305,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Network Scanner Section */}
-        <SettingSection title="Network Devices">
+        {/* <SettingSection title="Network Devices">
           <View style={styles.networkCard}>
             <View style={styles.networkHeader}>
               <View style={styles.networkStatus}>
@@ -1394,10 +1394,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Centralized MQTT Configuration Section */}
-        <SettingSection title="MQTT Configuration">
+        {/* <SettingSection title="MQTT Configuration">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1513,10 +1513,10 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* MQTT Connection Test Section */}
-        <SettingSection title="MQTT Connection Test">
+        {/* <SettingSection title="MQTT Connection Test">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1761,7 +1761,7 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Account Section */}
         <SettingSection title="Account">
