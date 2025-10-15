@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +21,7 @@ import {
   Settings,
   LogOut,
 } from 'lucide-react-native';
+import { useAuth } from '../../_context/AuthContext';
 
 interface StatCardProps {
   icon: React.ReactNode;
@@ -63,6 +65,23 @@ function MenuItem({ icon, title, onPress }: MenuItemProps) {
 }
 
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+        },
+      },
+    ]);
+  };
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -92,11 +111,18 @@ export default function ProfileScreen() {
               <View style={styles.onlineIndicator} />
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>Htoo Khant</Text>
-              <Text style={styles.profileEmail}>test@example.com</Text>
+              <Text style={styles.profileName}>{user?.name || 'User'}</Text>
+              <Text style={styles.profileEmail}>
+                {user?.email || 'user@example.com'}
+              </Text>
               <View style={styles.locationContainer}>
                 <MapPin size={16} color="rgba(255, 255, 255, 0.8)" />
-                <Text style={styles.locationText}>Bangkok, Thailand</Text>
+                <Text style={styles.locationText}>
+                  Member since{' '}
+                  {user?.createdAt
+                    ? new Date(user.createdAt).getFullYear()
+                    : '2024'}
+                </Text>
               </View>
             </View>
           </View>
@@ -184,7 +210,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon={<LogOut size={24} color="#dc2626" />}
               title="Sign Out"
-              onPress={() => {}}
+              onPress={handleLogout}
             />
           </View>
         </View>

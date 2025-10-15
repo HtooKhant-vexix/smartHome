@@ -12,6 +12,8 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
+import { AuthProvider } from '../_context/AuthContext';
+import { AuthGuard } from '../components/AuthGuard';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -48,37 +50,39 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: 'fade',
-          animationDuration: 80,
-          contentStyle: { backgroundColor: '#000' },
-          presentation: 'transparentModal',
-          gestureEnabled: true,
-          gestureDirection: 'horizontal',
-          fullScreenGestureEnabled: true,
-        }}
-      >
-        <Stack.Screen
-          name="(tabs)"
-          options={{
+    <AuthProvider>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
             animation: 'fade',
             animationDuration: 80,
-            gestureEnabled: false,
-          }}
-        />
-        <Stack.Screen
-          name="+not-found"
-          options={{
-            animation: 'slide_from_right',
-            animationDuration: 80,
+            contentStyle: { backgroundColor: '#000' },
+            presentation: 'transparentModal',
             gestureEnabled: true,
+            gestureDirection: 'horizontal',
+            fullScreenGestureEnabled: true,
           }}
-        />
-      </Stack>
-      <StatusBar style="light" />
-    </View>
+        >
+          <Stack.Screen
+            name="(tabs)"
+            options={{
+              animation: 'fade',
+              animationDuration: 80,
+              gestureEnabled: false,
+            }}
+          />
+          <Stack.Screen
+            name="+not-found"
+            options={{
+              animation: 'slide_from_right',
+              animationDuration: 80,
+              gestureEnabled: true,
+            }}
+          />
+        </Stack>
+        <StatusBar style="light" />
+      </View>
+    </AuthProvider>
   );
 }

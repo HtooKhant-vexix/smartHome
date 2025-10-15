@@ -1,5 +1,19 @@
 import { Lightbulb, Wind, Tv, Monitor } from 'lucide-react-native';
 
+// Authentication types
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
 // Device type definitions
 export type DeviceType =
   | 'smart-light'
