@@ -99,6 +99,9 @@ interface SmartHomeState {
   setDeviceBrightness: (brightness: number) => void;
   setDeviceColor: (r: number, g: number, b: number) => void;
 
+  // MQTT Connection Testing
+  testMqttConnection: (host?: string, port?: number) => Promise<boolean>;
+
   // AC Control
   setAcPower: (power: boolean) => void;
   setAcTemperature: (temp: number) => void;
@@ -511,6 +514,17 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           topicHelpers.acCmnd(axis === 'UD' ? 'SWINGV' : 'SWINGH'),
           value ? 'ON' : 'OFF'
         );
+      },
+
+      // MQTT Connection Testing
+      testMqttConnection: async (host?: string, port?: number) => {
+        try {
+          const isConnected = await mqttService.testConnection(host, port);
+          return isConnected;
+        } catch (error) {
+          console.error('MQTT connection test failed:', error);
+          return false;
+        }
       },
     }),
     {

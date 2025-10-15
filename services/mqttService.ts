@@ -59,6 +59,7 @@ export interface MqttServiceAPI {
   isConnected(): boolean;
   connect(): Promise<boolean>;
   disconnect(): void;
+  testConnection(host?: string, port?: number): Promise<boolean>;
   publish(
     topic: string,
     message: string,
@@ -154,6 +155,7 @@ function createService(
           client = new Paho.Client(config.host, config.port, clientId);
 
           const options: Paho.ConnectionOptions = {
+            timeout: 30, // Connection timeout in seconds
             onSuccess: () => {
               setStatus('connected');
               reconnectAttempts = 0;
@@ -162,15 +164,26 @@ function createService(
               resolve(true);
             },
             onFailure: (error: Paho.ErrorWithInvocationContext) => {
+              console.error(
+                'MQTT Connection failed:',
+                error.errorMessage || error
+              );
               setStatus('error');
               emitter.emit('error', error);
-              reject(error);
+              reject(
+                new Error(
+                  `MQTT Connection failed: ${
+                    error.errorMessage || 'Unknown error'
+                  }`
+                )
+              );
             },
             userName: config.username,
             password: config.password,
             useSSL: config.useSSL || false,
             keepAliveInterval: config.keepAlive || 60,
             cleanSession: config.cleanSession || true,
+            reconnect: true, // Enable automatic reconnection
           };
 
           client.onMessageArrived = (message: Paho.Message) => {
@@ -181,11 +194,29 @@ function createService(
             );
           };
 
-          client.onConnectionLost = (_resp: Paho.MQTTError) => {
+          client.onConnectionLost = (responseObject: Paho.MQTTError) => {
+            console.warn(
+              'MQTT Connection lost:',
+              responseObject.errorMessage || 'Unknown reason'
+            );
             setStatus('disconnected');
             emitter.emit('disconnected');
+
+            // Only attempt reconnection if we haven't exceeded max attempts
             if (reconnectAttempts < maxReconnectAttempts) {
+              console.log(
+                `Attempting MQTT reconnection (${
+                  reconnectAttempts + 1
+                }/${maxReconnectAttempts})`
+              );
               attemptReconnect();
+            } else {
+              console.error('MQTT max reconnection attempts reached');
+              setStatus('error');
+              emitter.emit(
+                'error',
+                new Error('Max reconnection attempts reached')
+              );
             }
           };
 
@@ -296,6 +327,41 @@ function createService(
     off: (event: any, listener: any) => {
       emitter.off(event, listener as any);
       return api as any;
+    },
+    testConnection: async (host?: string, port?: number) => {
+      const testHost = host || config.host;
+      const testPort = port || config.port;
+
+      try {
+        return new Promise<boolean>((resolve) => {
+          const testClient = new Paho.Client(
+            testHost,
+            testPort,
+            `test-${Date.now()}`
+          );
+
+          const testOptions: Paho.ConnectionOptions = {
+            timeout: 5, // Short timeout for testing
+            onSuccess: () => {
+              testClient.disconnect();
+              resolve(true);
+            },
+            onFailure: (error) => {
+              console.warn(
+                'MQTT test connection failed:',
+                error.errorMessage || error
+              );
+              resolve(false);
+            },
+            cleanSession: true,
+          };
+
+          testClient.connect(testOptions);
+        });
+      } catch (error) {
+        console.error('MQTT connection test error:', error);
+        return false;
+      }
     },
   };
 
