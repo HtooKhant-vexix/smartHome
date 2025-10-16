@@ -8,20 +8,40 @@ export const topics: Record<string, number> = {
 };
 
 // Centralized topic helpers for MQTT scheme
+// Bridge configuration: topic room1/# out 1 and topic cloud/room1/# in 1
+// This means local broker uses room1/... and cloud broker uses cloud/room1/...
 export const TOPIC_BASE = {
   location: 'room1',
+  cloudLocation: 'cloud/room1',
   controller: 'light_control',
   acBase: 'room1/ac',
 } as const;
 
 export const topicHelpers = {
   switchSet: (
-    deviceKey: 'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
-  ) => `${TOPIC_BASE.location}/${TOPIC_BASE.controller}/${deviceKey}/set`,
+    deviceKey: 'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light',
+    useCloud = false
+  ) =>
+    useCloud
+      ? `${TOPIC_BASE.cloudLocation}/${TOPIC_BASE.controller}/${deviceKey}/set`
+      : `${TOPIC_BASE.location}/${TOPIC_BASE.controller}/${deviceKey}/set`,
   switchState: (
-    deviceKey: 'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
-  ) => `${TOPIC_BASE.location}/${TOPIC_BASE.controller}/${deviceKey}/state`,
-  acCmnd: (suffix: string) => `${TOPIC_BASE.acBase}/cmnd/${suffix}`,
-  acStat: (suffix: string) => `${TOPIC_BASE.acBase}/stat/${suffix}`,
-  acTele: (suffix: string) => `${TOPIC_BASE.acBase}/tele/${suffix}`,
+    deviceKey: 'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light',
+    useCloud = false
+  ) =>
+    useCloud
+      ? `${TOPIC_BASE.cloudLocation}/${TOPIC_BASE.controller}/${deviceKey}/state`
+      : `${TOPIC_BASE.location}/${TOPIC_BASE.controller}/${deviceKey}/state`,
+  acCmnd: (suffix: string, useCloud = false) =>
+    useCloud
+      ? `cloud/${TOPIC_BASE.acBase}/cmnd/${suffix}`
+      : `${TOPIC_BASE.acBase}/cmnd/${suffix}`,
+  acStat: (suffix: string, useCloud = false) =>
+    useCloud
+      ? `cloud/${TOPIC_BASE.acBase}/stat/${suffix}`
+      : `${TOPIC_BASE.acBase}/stat/${suffix}`,
+  acTele: (suffix: string, useCloud = false) =>
+    useCloud
+      ? `cloud/${TOPIC_BASE.acBase}/tele/${suffix}`
+      : `${TOPIC_BASE.acBase}/tele/${suffix}`,
 };

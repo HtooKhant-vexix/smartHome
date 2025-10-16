@@ -240,7 +240,8 @@ export default function HomeScreen() {
                 );
                 const activeCount = rooms.reduce(
                   (acc, r) =>
-                    acc + (r.devices[t]?.filter((d) => d.isActive).length || 0),
+                    acc +
+                    (r.devices[t]?.filter((d) => d.isActive)?.length || 0),
                   0
                 );
                 return { t, deviceCount, activeCount };

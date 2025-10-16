@@ -1,6 +1,9 @@
 import Paho from 'paho-mqtt';
 import { EventEmitter } from 'eventemitter3';
 
+// MQTT Broker Types
+export type BrokerType = 'local' | 'cloud';
+
 // Centralized MQTT Configuration
 export interface MqttConfig {
   host: string;
@@ -11,20 +14,45 @@ export interface MqttConfig {
   useSSL?: boolean;
   keepAlive?: number;
   cleanSession?: boolean;
+  type: BrokerType;
 }
 
-// Default MQTT Configuration
-const DEFAULT_MQTT_CONFIG: MqttConfig = {
-  host: '192.168.0.100',
-  // host: '192.168.1.146',
-  port: 9001,
-  clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
-  username: 'detpos',
-  password: 'asdffdsa',
-  useSSL: false,
-  keepAlive: 60,
-  cleanSession: true,
+// Broker Configurations
+export interface BrokerConfigurations {
+  local: MqttConfig;
+  cloud: MqttConfig;
+  current: BrokerType;
+}
+
+// Broker Configurations
+const BROKER_CONFIGS: BrokerConfigurations = {
+  local: {
+    host: '192.168.0.100', // Local broker with bridge
+    port: 9001, // MQTT port (listener 1883)
+    clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
+    username: 'detpos',
+    password: 'asdffdsa',
+    useSSL: false,
+    keepAlive: 60,
+    cleanSession: true,
+    type: 'local',
+  },
+  cloud: {
+    host: 'f6ce8c16ab1f4b958a2179d249d62bf3.s2.eu.hivemq.cloud',
+    port: 8884, // MQTT over SSL (matches bridge config)
+    clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
+    username: 'smart',
+    password: 'Asdffdsa-4580',
+    useSSL: true,
+    keepAlive: 60,
+    cleanSession: true,
+    type: 'cloud',
+  },
+  current: 'local', // Default to local, will be switched based on availability
 };
+
+// Default MQTT Configuration (for backward compatibility)
+const DEFAULT_MQTT_CONFIG: MqttConfig = { ...BROKER_CONFIGS.local };
 
 // MQTT Message Interface
 export interface MqttMessage {
@@ -51,15 +79,27 @@ export interface MqttServiceEvents {
   statusChanged: (status: MqttConnectionStatus) => void;
 }
 
+// MQTT Bridge Status
+export type MqttBridgeStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'switching'
+  | 'error';
+
 // Centralized MQTT Service
 export interface MqttServiceAPI {
   getConfig(): MqttConfig;
+  getBrokerConfigs(): BrokerConfigurations;
   updateConfig(newConfig: Partial<MqttConfig>): void;
-  getStatus(): MqttConnectionStatus;
+  switchToBroker(brokerType: BrokerType): Promise<boolean>;
+  getCurrentBroker(): BrokerType;
+  getStatus(): MqttBridgeStatus;
   isConnected(): boolean;
   connect(): Promise<boolean>;
   disconnect(): void;
   testConnection(host?: string, port?: number): Promise<boolean>;
+  testBrokerConnection(brokerType: BrokerType): Promise<boolean>;
   publish(
     topic: string,
     message: string,
@@ -94,18 +134,20 @@ function createService(
   initialConfig: MqttConfig = DEFAULT_MQTT_CONFIG
 ): MqttServiceAPI {
   let client: Paho.Client | null = null;
-  let config: MqttConfig = { ...DEFAULT_MQTT_CONFIG, ...initialConfig };
-  let status: MqttConnectionStatus = 'disconnected';
+  let brokerConfigs: BrokerConfigurations = { ...BROKER_CONFIGS };
+  let currentBroker: BrokerType = brokerConfigs.current;
+  let config: MqttConfig = { ...brokerConfigs[currentBroker] };
+  let status: MqttBridgeStatus = 'disconnected';
   let reconnectAttempts = 0;
   const maxReconnectAttempts = 5;
   const reconnectInterval = 5000;
   const subscribedTopics = new Set<string>();
   const emitter = new EventEmitter<MqttServiceEvents>();
 
-  const setStatus = (newStatus: MqttConnectionStatus) => {
+  const setStatus = (newStatus: MqttBridgeStatus) => {
     if (status !== newStatus) {
       status = newStatus;
-      emitter.emit('statusChanged', status);
+      emitter.emit('statusChanged', status as any);
     }
   };
 
@@ -113,10 +155,10 @@ function createService(
     status === 'connected' && (client?.isConnected() || false);
 
   const attemptReconnect = () => {
-    setStatus('reconnecting');
+    setStatus('connecting');
     reconnectAttempts++;
     setTimeout(() => {
-      if (status === 'reconnecting') {
+      if (status === 'connecting') {
         api.connect().catch((error) => {
           // eslint-disable-next-line no-console
           console.error('Reconnection attempt failed:', error);
@@ -132,8 +174,142 @@ function createService(
     }, reconnectInterval);
   };
 
+  // Test connection to a specific broker
+  const testBrokerConnection = async (
+    brokerType: BrokerType
+  ): Promise<boolean> => {
+    const brokerConfig = brokerConfigs[brokerType];
+    return new Promise<boolean>((resolve) => {
+      let timeoutId: ReturnType<typeof setTimeout>;
+
+      try {
+        const testClient = new Paho.Client(
+          brokerConfig.host,
+          brokerConfig.port,
+          `test-${Date.now()}`
+        );
+
+        const testOptions: Paho.ConnectionOptions = {
+          timeout: 3, // Reduced timeout to 3 seconds
+          onSuccess: () => {
+            clearTimeout(timeoutId);
+            testClient.disconnect();
+            resolve(true);
+          },
+          onFailure: (error) => {
+            clearTimeout(timeoutId);
+            console.log(
+              `Broker test failed for ${brokerType}:`,
+              error.errorMessage
+            );
+            resolve(false);
+          },
+          userName: brokerConfig.username,
+          password: brokerConfig.password,
+          useSSL: brokerConfig.useSSL,
+          cleanSession: true,
+        };
+
+        // Set a timeout to ensure we don't wait too long
+        timeoutId = setTimeout(() => {
+          console.log(`Broker test timeout for ${brokerType}`);
+          resolve(false);
+        }, 4000); // 4 second timeout
+
+        testClient.connect(testOptions);
+      } catch (error) {
+        console.error(`Broker test failed for ${brokerType}:`, error);
+        resolve(false);
+      }
+    });
+  };
+
+  // Switch to a different broker
+  const switchToBroker = async (brokerType: BrokerType): Promise<boolean> => {
+    if (currentBroker === brokerType) {
+      return isConnected();
+    }
+
+    console.log(`Switching from ${currentBroker} to ${brokerType} broker`);
+    setStatus('switching');
+
+    try {
+      // Disconnect current connection
+      if (client && client.isConnected()) {
+        client.disconnect();
+      }
+
+      // Update configuration
+      currentBroker = brokerType;
+      config = { ...brokerConfigs[brokerType] };
+
+      // Test new broker before switching
+      const isReachable = await testBrokerConnection(brokerType);
+      if (!isReachable) {
+        console.warn(
+          `Broker ${brokerType} is not reachable, but will attempt connection`
+        );
+      }
+
+      // Attempt connection to new broker
+      const connected = await api.connect();
+      if (connected) {
+        console.log(`Successfully switched to ${brokerType} broker`);
+        return true;
+      } else {
+        console.error(`Failed to connect to ${brokerType} broker`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`Error switching to ${brokerType} broker:`, error);
+      setStatus('error');
+      return false;
+    }
+  };
+
+  // Auto-detect best available broker
+  const detectBestBroker = async (): Promise<BrokerType> => {
+    console.log('Detecting best available MQTT broker...');
+
+    // Import network detector to check if we're on the same subnet
+    const { networkDetector } = require('../utils/networkDetection');
+    const networkInfo = await networkDetector.getNetworkInfo();
+
+    console.log('Network info:', networkInfo);
+
+    // Only try local broker if we're on the same subnet (192.168.0.x)
+    if (networkInfo.isLocalNetwork) {
+      console.log(
+        'On home network (192.168.0.x), testing local broker first...'
+      );
+      const localAvailable = await testBrokerConnection('local');
+      if (localAvailable) {
+        console.log('✅ Local broker (192.168.0.100) is reachable');
+        return 'local';
+      }
+      console.log(
+        '❌ Local broker (192.168.0.100) not reachable, switching to cloud broker...'
+      );
+    } else {
+      console.log(
+        'On different network, skipping local broker test, using cloud broker...'
+      );
+    }
+
+    // Test cloud broker as fallback
+    const cloudAvailable = await testBrokerConnection('cloud');
+    if (cloudAvailable) {
+      console.log('✅ Cloud broker is available');
+      return 'cloud';
+    }
+
+    console.warn('❌ No brokers are reachable, defaulting to cloud');
+    return 'cloud';
+  };
+
   const api: MqttServiceAPI = {
     getConfig: () => ({ ...config }),
+    getBrokerConfigs: () => ({ ...brokerConfigs }),
     updateConfig: (newConfig) => {
       config = { ...config, ...newConfig };
       if (isConnected()) {
@@ -141,19 +317,69 @@ function createService(
         setTimeout(() => api.connect(), 1000);
       }
     },
+    switchToBroker,
+    getCurrentBroker: () => currentBroker,
     getStatus: () => status,
     isConnected,
-    connect: () => {
-      return new Promise<boolean>((resolve, reject) => {
-        if (isConnected()) {
-          resolve(true);
-          return;
-        }
-        try {
-          setStatus('connecting');
-          const clientId = `${config.clientId}-${Date.now()}`;
-          client = new Paho.Client(config.host, config.port, clientId);
+    testConnection: async (host?: string, port?: number) => {
+      const testHost = host || config.host;
+      const testPort = port || config.port;
 
+      try {
+        return new Promise<boolean>((resolve) => {
+          const testClient = new Paho.Client(
+            testHost,
+            testPort,
+            `test-${Date.now()}`
+          );
+
+          const testOptions: Paho.ConnectionOptions = {
+            timeout: 5,
+            onSuccess: () => {
+              testClient.disconnect();
+              resolve(true);
+            },
+            onFailure: () => {
+              resolve(false);
+            },
+            cleanSession: true,
+          };
+
+          testClient.connect(testOptions);
+        });
+      } catch (error) {
+        console.error('MQTT connection test error:', error);
+        return false;
+      }
+    },
+    testBrokerConnection,
+    connect: async () => {
+      if (isConnected()) {
+        return true;
+      }
+
+      try {
+        // Detect best broker before setting status
+        console.log('Starting broker detection...');
+        const bestBroker = await detectBestBroker();
+        console.log(
+          `Selected broker: ${bestBroker}, current broker: ${currentBroker}`
+        );
+
+        if (bestBroker !== currentBroker) {
+          console.log(`Auto-switching to ${bestBroker} broker`);
+          await switchToBroker(bestBroker);
+        }
+
+        setStatus('connecting');
+        console.log(
+          `Attempting to connect to ${currentBroker} broker: ${config.host}:${config.port}`
+        );
+
+        const clientId = `${config.clientId}-${Date.now()}`;
+        client = new Paho.Client(config.host, config.port, clientId);
+
+        return new Promise<boolean>((resolve, reject) => {
           const options: Paho.ConnectionOptions = {
             timeout: 30, // Connection timeout in seconds
             onSuccess: () => {
@@ -186,47 +412,60 @@ function createService(
             reconnect: true, // Enable automatic reconnection
           };
 
-          client.onMessageArrived = (message: Paho.Message) => {
-            emitter.emit(
-              'message',
-              message.destinationName,
-              message.payloadString
-            );
-          };
-
-          client.onConnectionLost = (responseObject: Paho.MQTTError) => {
-            console.warn(
-              'MQTT Connection lost:',
-              responseObject.errorMessage || 'Unknown reason'
-            );
-            setStatus('disconnected');
-            emitter.emit('disconnected');
-
-            // Only attempt reconnection if we haven't exceeded max attempts
-            if (reconnectAttempts < maxReconnectAttempts) {
+          if (client) {
+            client.onMessageArrived = (message: Paho.Message) => {
               console.log(
-                `Attempting MQTT reconnection (${
-                  reconnectAttempts + 1
-                }/${maxReconnectAttempts})`
+                `📥 Received MQTT message - Topic: ${message.destinationName}, Message: ${message.payloadString}`
               );
-              attemptReconnect();
-            } else {
-              console.error('MQTT max reconnection attempts reached');
-              setStatus('error');
               emitter.emit(
-                'error',
-                new Error('Max reconnection attempts reached')
+                'message',
+                message.destinationName,
+                message.payloadString
               );
-            }
-          };
+            };
 
-          client.connect(options);
-        } catch (error) {
-          setStatus('error');
-          emitter.emit('error', error);
-          reject(error);
-        }
-      });
+            client.onConnectionLost = (responseObject: Paho.MQTTError) => {
+              console.warn(
+                'MQTT Connection lost:',
+                responseObject.errorMessage || 'Unknown reason'
+              );
+              setStatus('disconnected');
+              emitter.emit('disconnected');
+
+              // Only attempt reconnection if we haven't exceeded max attempts
+              if (reconnectAttempts < maxReconnectAttempts) {
+                console.log(
+                  `Attempting MQTT reconnection (${
+                    reconnectAttempts + 1
+                  }/${maxReconnectAttempts})`
+                );
+                attemptReconnect();
+              } else {
+                console.error('MQTT max reconnection attempts reached');
+                setStatus('error');
+                emitter.emit(
+                  'error',
+                  new Error('Max reconnection attempts reached')
+                );
+              }
+            };
+          }
+
+          try {
+            if (client) {
+              client.connect(options);
+            }
+          } catch (error) {
+            setStatus('error');
+            emitter.emit('error', error);
+            reject(error);
+          }
+        });
+      } catch (error) {
+        console.error('MQTT connection error:', error);
+        setStatus('error');
+        return false;
+      }
     },
     disconnect: () => {
       if (client) {
@@ -243,15 +482,19 @@ function createService(
         return false;
       }
       try {
+        console.log(
+          `📤 Publishing MQTT message - Topic: ${topic}, Message: ${message}, QoS: ${qos}`
+        );
         const mqttMessage = new Paho.Message(message);
         mqttMessage.destinationName = topic;
         mqttMessage.qos = qos;
         mqttMessage.retained = retained;
         client?.send(mqttMessage);
+        console.log(`✅ MQTT message sent successfully`);
         return true;
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.error('Error publishing MQTT message:', error);
+        console.error('❌ Error publishing MQTT message:', error);
         emitter.emit('error', error);
         return false;
       }
@@ -327,41 +570,6 @@ function createService(
     off: (event: any, listener: any) => {
       emitter.off(event, listener as any);
       return api as any;
-    },
-    testConnection: async (host?: string, port?: number) => {
-      const testHost = host || config.host;
-      const testPort = port || config.port;
-
-      try {
-        return new Promise<boolean>((resolve) => {
-          const testClient = new Paho.Client(
-            testHost,
-            testPort,
-            `test-${Date.now()}`
-          );
-
-          const testOptions: Paho.ConnectionOptions = {
-            timeout: 5, // Short timeout for testing
-            onSuccess: () => {
-              testClient.disconnect();
-              resolve(true);
-            },
-            onFailure: (error) => {
-              console.warn(
-                'MQTT test connection failed:',
-                error.errorMessage || error
-              );
-              resolve(false);
-            },
-            cleanSession: true,
-          };
-
-          testClient.connect(testOptions);
-        });
-      } catch (error) {
-        console.error('MQTT connection test error:', error);
-        return false;
-      }
     },
   };
 

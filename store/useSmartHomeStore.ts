@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { mqttService, MqttConnectionStatus } from '../services/mqttService';
+import {
+  mqttService,
+  MqttConnectionStatus,
+  MqttBridgeStatus,
+  BrokerType,
+  BrokerConfigurations,
+} from '../services/mqttService';
+import { networkDetector, NetworkInfo } from '../utils/networkDetection';
 import { topicHelpers } from '../constants/topicTable';
 import { DeviceType, Device } from '../constants/defaultData';
 
@@ -32,6 +39,9 @@ interface ConfiguredDevice {
 interface MqttState {
   isConnected: boolean;
   status: MqttConnectionStatus;
+  currentBroker: BrokerType;
+  brokerConfigs: BrokerConfigurations;
+  networkInfo: NetworkInfo | null;
 }
 
 interface SensorData {
@@ -99,8 +109,19 @@ interface SmartHomeState {
   setDeviceBrightness: (brightness: number) => void;
   setDeviceColor: (r: number, g: number, b: number) => void;
 
+  // MQTT Bridge Control
+  switchMqttBroker: (brokerType: BrokerType) => Promise<boolean>;
+  getCurrentMqttBroker: () => BrokerType;
+  getMqttBrokerConfigs: () => BrokerConfigurations;
+  testMqttBrokerConnection: (brokerType: BrokerType) => Promise<boolean>;
+
   // MQTT Connection Testing
   testMqttConnection: (host?: string, port?: number) => Promise<boolean>;
+
+  // Network Detection
+  getNetworkInfo: () => NetworkInfo | null;
+  isOnLocalNetwork: () => boolean;
+  updateNetworkInfo: () => Promise<void>;
 
   // AC Control
   setAcPower: (power: boolean) => void;
@@ -119,7 +140,7 @@ const defaultRooms: Room[] = [
     devices: {
       'smart-light': [
         { id: '1', name: 'light switch', isActive: false },
-        { id: '2', name: 'AC switch', isActive: false },
+        { id: '2', name: 'AC power switch', isActive: false },
         { id: '3', name: 'socket switch', isActive: false },
         { id: '4', name: 'rgb light', isActive: false },
       ],
@@ -162,6 +183,9 @@ export const useSmartHomeStore = create<SmartHomeState>()(
       mqtt: {
         isConnected: false,
         status: 'disconnected',
+        currentBroker: 'local',
+        brokerConfigs: mqttService.getBrokerConfigs(),
+        networkInfo: null,
       },
       sensorData: {
         temperature: 0,
@@ -353,27 +377,61 @@ export const useSmartHomeStore = create<SmartHomeState>()(
 
       // MQTT Actions
       initializeMqtt: async () => {
+        // Update network info first
+        await get().updateNetworkInfo();
+
+        // Set up network monitoring
+        const unsubscribeNetwork = networkDetector.addNetworkListener(
+          (networkInfo) => {
+            set((state) => ({
+              mqtt: {
+                ...state.mqtt,
+                networkInfo,
+              },
+            }));
+
+            // If network changes and we're not connected, try to reconnect
+            if (!mqttService.isConnected()) {
+              console.log('Network changed, attempting to reconnect...');
+              mqttService.connect().catch(console.error);
+            }
+          }
+        );
+
         // Set up MQTT event listeners
         mqttService.on('connected', () => {
           console.log('MQTT Connected');
           set((state) => ({
-            mqtt: { isConnected: true, status: 'connected' },
+            mqtt: {
+              ...state.mqtt,
+              isConnected: true,
+              status: 'connected',
+            },
           }));
 
-          // Subscribe to all device topics
+          // Subscribe to all device topics (bridge forwards room1/# in both directions)
           const deviceKeys: Array<
             'light_switch' | 'AC_switch' | 'socket_switch' | 'rgb_light'
           > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
 
           deviceKeys.forEach((key) => {
-            mqttService.subscribe(topicHelpers.switchState(key));
+            // Subscribe to local topics
+            mqttService.subscribe(topicHelpers.switchState(key, false));
+            // Subscribe to cloud topics (for when connected to cloud broker)
+            mqttService.subscribe(topicHelpers.switchState(key, true));
           });
 
-          // Subscribe to AC topics
+          // Subscribe to AC topics (same for both brokers)
           mqttService.subscribe(`${AC_BASE_TOPIC}/stat/RESULT`);
           mqttService.subscribe(`${AC_BASE_TOPIC}/tele/STATE`);
           mqttService.subscribe(`${AC_BASE_TOPIC}/tele/LWT`);
           mqttService.subscribe(`${AC_BASE_TOPIC}/tele/SENSOR`);
+
+          // Also subscribe to cloud AC topics when connected to cloud broker
+          mqttService.subscribe(`cloud/${AC_BASE_TOPIC}/stat/RESULT`);
+          mqttService.subscribe(`cloud/${AC_BASE_TOPIC}/tele/STATE`);
+          mqttService.subscribe(`cloud/${AC_BASE_TOPIC}/tele/LWT`);
+          mqttService.subscribe(`cloud/${AC_BASE_TOPIC}/tele/SENSOR`);
 
           // Subscribe to sensor topics
           mqttService.subscribe('home/test/temp');
@@ -384,14 +442,23 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         mqttService.on('disconnected', () => {
           console.log('MQTT Disconnected');
           set((state) => ({
-            mqtt: { isConnected: false, status: 'disconnected' },
+            mqtt: {
+              ...state.mqtt,
+              isConnected: false,
+              status: 'disconnected',
+            },
           }));
         });
 
         mqttService.on('statusChanged', (status: MqttConnectionStatus) => {
           console.log('MQTT Status Changed:', status);
           set((state) => ({
-            mqtt: { ...state.mqtt, status },
+            mqtt: {
+              ...state.mqtt,
+              status,
+              isConnected: mqttService.isConnected(),
+              currentBroker: mqttService.getCurrentBroker(),
+            },
           }));
         });
 
@@ -430,7 +497,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         return mqttService.subscribe(topic);
       },
 
-      setMqttStatus: (status) =>
+      setMqttStatus: (status: MqttConnectionStatus) =>
         set((state) => ({
           mqtt: { ...state.mqtt, status },
         })),
@@ -450,18 +517,26 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         const device = devices.find((d) => d.id === deviceId);
         const nextActive = device ? !device.isActive : true;
 
-        // Publish to MQTT
+        // Get current broker for logging
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
+
+        console.log(
+          `Device control - Broker: ${currentBroker}, UseCloud: ${useCloud}`
+        );
+
+        // Publish to MQTT (use cloud topics when connected to cloud broker)
         if (deviceType === 'smart-light') {
           const key = DEVICE_KEYS[deviceIndex] || 'light_switch';
-          mqttService.publish(
-            topicHelpers.switchSet(key),
-            nextActive ? 'ON' : 'OFF'
-          );
+          const topic = topicHelpers.switchSet(key, useCloud);
+          const message = nextActive ? 'ON' : 'OFF';
+          console.log(`Publishing to topic: ${topic}, message: ${message}`);
+          mqttService.publish(topic, message);
         } else if (deviceType === 'smart-ac') {
-          mqttService.publish(
-            topicHelpers.acCmnd('POWER'),
-            nextActive ? 'ON' : 'OFF'
-          );
+          const topic = topicHelpers.acCmnd('POWER', useCloud);
+          const message = nextActive ? 'ON' : 'OFF';
+          console.log(`Publishing to topic: ${topic}, message: ${message}`);
+          mqttService.publish(topic, message);
         }
 
         // Update local state optimistically
@@ -480,15 +555,27 @@ export const useSmartHomeStore = create<SmartHomeState>()(
 
       // AC Control
       setAcPower: (power) => {
-        mqttService.publish(topicHelpers.acCmnd('POWER'), power ? 'ON' : 'OFF');
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
+        mqttService.publish(
+          topicHelpers.acCmnd('POWER', useCloud),
+          power ? 'ON' : 'OFF'
+        );
       },
 
       setAcTemperature: (temp) => {
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
         const t = Math.max(16, Math.min(30, Math.round(temp)));
-        mqttService.publish(topicHelpers.acCmnd('TEMPERATURE'), String(t));
+        mqttService.publish(
+          topicHelpers.acCmnd('TEMPERATURE', useCloud),
+          String(t)
+        );
       },
 
       setAcMode: (mode) => {
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
         const map: Record<typeof mode, string> = {
           auto: '0',
           cool: '1',
@@ -496,24 +583,66 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           dry: '3',
           fan: '4', // ✅ Added Fan mode per MQTT API docs
         };
-        mqttService.publish(topicHelpers.acCmnd('MODE'), map[mode]);
+        mqttService.publish(topicHelpers.acCmnd('MODE', useCloud), map[mode]);
       },
 
       setAcFanSpeed: (speed) => {
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
         const map: Record<typeof speed, string> = {
           auto: '0', // ✅ Auto fan speed per MQTT API docs
           low: '1',
           med: '2',
           high: '3',
         };
-        mqttService.publish(topicHelpers.acCmnd('FAN'), map[speed]);
+        mqttService.publish(topicHelpers.acCmnd('FAN', useCloud), map[speed]);
       },
 
       setAcSwing: (axis, value) => {
+        const currentBroker = mqttService.getCurrentBroker();
+        const useCloud = currentBroker === 'cloud';
         mqttService.publish(
-          topicHelpers.acCmnd(axis === 'UD' ? 'SWINGV' : 'SWINGH'),
+          topicHelpers.acCmnd(axis === 'UD' ? 'SWINGV' : 'SWINGH', useCloud),
           value ? 'ON' : 'OFF'
         );
+      },
+
+      // MQTT Bridge Control
+      switchMqttBroker: async (brokerType) => {
+        try {
+          const success = await mqttService.switchToBroker(brokerType);
+          if (success) {
+            set((state) => ({
+              mqtt: {
+                ...state.mqtt,
+                currentBroker: brokerType,
+                status: mqttService.getStatus() as MqttConnectionStatus,
+                isConnected: mqttService.isConnected(),
+              },
+            }));
+          }
+          return success;
+        } catch (error) {
+          console.error('Failed to switch MQTT broker:', error);
+          return false;
+        }
+      },
+
+      getCurrentMqttBroker: () => {
+        return mqttService.getCurrentBroker();
+      },
+
+      getMqttBrokerConfigs: () => {
+        return mqttService.getBrokerConfigs();
+      },
+
+      testMqttBrokerConnection: async (brokerType) => {
+        try {
+          return await mqttService.testBrokerConnection(brokerType);
+        } catch (error) {
+          console.error('MQTT broker test failed:', error);
+          return false;
+        }
       },
 
       // MQTT Connection Testing
@@ -524,6 +653,31 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         } catch (error) {
           console.error('MQTT connection test failed:', error);
           return false;
+        }
+      },
+
+      // Network Detection
+      getNetworkInfo: () => {
+        return get().mqtt.networkInfo;
+      },
+
+      isOnLocalNetwork: () => {
+        const networkInfo = get().mqtt.networkInfo;
+        return networkInfo?.isLocalNetwork || false;
+      },
+
+      updateNetworkInfo: async () => {
+        try {
+          const networkInfo = await networkDetector.getNetworkInfo();
+          set((state) => ({
+            mqtt: {
+              ...state.mqtt,
+              networkInfo,
+            },
+          }));
+          console.log('Network info updated:', networkInfo);
+        } catch (error) {
+          console.error('Failed to update network info:', error);
         }
       },
     }),
@@ -721,8 +875,9 @@ function handleMqttMessage(
     > = ['light_switch', 'AC_switch', 'socket_switch', 'rgb_light'];
 
     deviceKeys.forEach((key) => {
-      const stateTopic = topicHelpers.switchState(key);
-      if (topic === stateTopic) {
+      const localStateTopic = topicHelpers.switchState(key, false);
+      const cloudStateTopic = topicHelpers.switchState(key, true);
+      if (topic === localStateTopic || topic === cloudStateTopic) {
         const isActive = payload === 'ON';
         updateDeviceStatesFromMqtt(key, isActive, set, get);
       }
@@ -731,7 +886,9 @@ function handleMqttMessage(
     // Handle Aircon state messages (smart-ac device, NOT AC_switch!)
     if (
       topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
-      topic === `${AC_BASE_TOPIC}/tele/STATE`
+      topic === `${AC_BASE_TOPIC}/tele/STATE` ||
+      topic === `cloud/${AC_BASE_TOPIC}/stat/RESULT` ||
+      topic === `cloud/${AC_BASE_TOPIC}/tele/STATE`
     ) {
       try {
         const data = JSON.parse(payload);
@@ -743,13 +900,19 @@ function handleMqttMessage(
     }
 
     // Handle Aircon LWT (Last Will and Testament) for online/offline status
-    if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
+    if (
+      topic === `${AC_BASE_TOPIC}/tele/LWT` ||
+      topic === `cloud/${AC_BASE_TOPIC}/tele/LWT`
+    ) {
       const online = payload?.toLowerCase() === 'online';
       updateAirconOnlineStatus(online, set, get);
     }
 
     // Handle Aircon sensor data
-    if (topic === `${AC_BASE_TOPIC}/tele/SENSOR`) {
+    if (
+      topic === `${AC_BASE_TOPIC}/tele/SENSOR` ||
+      topic === `cloud/${AC_BASE_TOPIC}/tele/SENSOR`
+    ) {
       try {
         const data = JSON.parse(payload);
         if (typeof data.temperature === 'number') {

@@ -45,8 +45,10 @@ import {
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
+import { NetworkIndicator } from '../../../components/NetworkIndicator';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Use centralized topic helpers
 // MQTT topic scheme config for switches
 const MQTT_LOCATION = 'room1';
 const MQTT_CONTROLLER = 'light_control';
@@ -113,7 +115,29 @@ export default function DeviceDetailScreen() {
     }
   }, [currentDevice?.isActive]);
 
-  // Load AC settings from store on mount
+  // Also sync AC power state with store for real-time updates
+  const storeDeviceActive = useSmartHomeStore((state) => {
+    if (currentDevice) {
+      const room = state.rooms.find((r) => r.id === currentDevice.roomId);
+      const device = room?.devices[deviceType]?.find(
+        (d) => d.id === currentDevice.id
+      );
+      return device?.isActive;
+    }
+    return null;
+  });
+
+  // Update local active state when store device state changes
+  useEffect(() => {
+    if (storeDeviceActive !== null && storeDeviceActive !== undefined) {
+      setIsActive(storeDeviceActive);
+      if (deviceType === 'smart-ac') {
+        setAcPower(storeDeviceActive);
+      }
+    }
+  }, [deviceType, storeDeviceActive]);
+
+  // Load AC settings from store on mount and when device changes
   useEffect(() => {
     if (deviceType === 'smart-ac' && currentDevice?.acSettings) {
       const settings = currentDevice.acSettings;
@@ -126,7 +150,38 @@ export default function DeviceDetailScreen() {
       setAcLastSeen(settings.lastSeen || '');
       setAcPower(currentDevice.isActive || false);
     }
-  }, [deviceType, currentDevice?.acSettings]);
+  }, [deviceType, currentDevice?.acSettings, currentDevice?.isActive]);
+
+  // Also sync with store AC state changes for real-time updates
+  const storeAcState = useSmartHomeStore((state) => {
+    if (deviceType === 'smart-ac' && currentDevice) {
+      const room = state.rooms.find((r) => r.id === currentDevice.roomId);
+      const acDevice = room?.devices['smart-ac']?.find(
+        (d) => d.id === currentDevice.id
+      );
+      return acDevice?.acSettings;
+    }
+    return null;
+  });
+
+  // Update local state when store AC state changes
+  useEffect(() => {
+    if (deviceType === 'smart-ac' && storeAcState) {
+      setAcMode(storeAcState.mode || 'cool');
+      setAcTemp(storeAcState.temperature || 24);
+      setAcFanSpeed(storeAcState.fanSpeed || 'auto');
+      setSwingUpDown(
+        storeAcState.swingV !== undefined ? storeAcState.swingV : false
+      );
+      setSwingLeftRight(
+        storeAcState.swingH !== undefined ? storeAcState.swingH : false
+      );
+      setAcOnline(
+        storeAcState.online !== undefined ? storeAcState.online : false
+      );
+      setAcLastSeen(storeAcState.lastSeen || '');
+    }
+  }, [deviceType, storeAcState]);
 
   const [temperature, setTemperature] = useState(
     defaultDeviceStates.temperature
@@ -138,9 +193,14 @@ export default function DeviceDetailScreen() {
   // Use Zustand store for MQTT
   const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
   const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
+  const currentBroker = useSmartHomeStore((state) => state.mqtt.currentBroker);
   const publishMqtt = useSmartHomeStore((state) => state.publishMqtt);
   const subscribeMqtt = useSmartHomeStore((state) => state.subscribeMqtt);
   const connectMqtt = useSmartHomeStore((state) => state.connectMqtt);
+  const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
+
+  // Loading state for MQTT initialization
+  const [mqttInitializing, setMqttInitializing] = useState(false);
   const setAcPowerStore = useSmartHomeStore((state) => state.setAcPower);
   const setAcTemperatureStore = useSmartHomeStore(
     (state) => state.setAcTemperature
@@ -271,13 +331,29 @@ export default function DeviceDetailScreen() {
 
     return 'socket_switch';
   };
-  const buildTopic = (device: string, action: 'set' | 'state') =>
-    action === 'set'
-      ? topicHelpers.switchSet(device as any)
-      : topicHelpers.switchState(device as any);
-  const acCmnd = (suffix: string) => topicHelpers.acCmnd(suffix);
-  const acStat = (suffix: string) => topicHelpers.acStat(suffix);
-  const publishSet = (device: string, payload: string) => {
+  const buildTopic = (device: string, action: 'set' | 'state') => {
+    const currentBroker = getCurrentBroker();
+    const useCloud = currentBroker === 'cloud';
+    return action === 'set'
+      ? topicHelpers.switchSet(device as any, useCloud)
+      : topicHelpers.switchState(device as any, useCloud);
+  };
+  const acCmnd = (suffix: string) => {
+    const currentBroker = getCurrentBroker();
+    const useCloud = currentBroker === 'cloud';
+    return topicHelpers.acCmnd(suffix, useCloud);
+  };
+  const acStat = (suffix: string) => {
+    const currentBroker = getCurrentBroker();
+    const useCloud = currentBroker === 'cloud';
+    return topicHelpers.acStat(suffix, useCloud);
+  };
+
+  // Get current broker to determine if we should use cloud topics
+  const getCurrentBroker = () => {
+    return useSmartHomeStore.getState().mqtt.currentBroker;
+  };
+  const publishSet = (device: string, payload: string): boolean => {
     if (!mqttConnected) {
       showAlert(
         'Error',
@@ -290,7 +366,7 @@ export default function DeviceDetailScreen() {
   };
 
   const handleColorChange = (newColor: { r: number; g: number; b: number }) => {
-    if (!mqttConnected) {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -298,8 +374,19 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
     setColor(newColor);
     setDeviceColorStore(newColor.r, newColor.g, newColor.b);
+    // Don't show success alert - just update the UI silently
   };
 
   const panResponder = useRef(
@@ -386,10 +473,84 @@ export default function DeviceDetailScreen() {
     };
   };
 
+  // Initialize MQTT when component mounts
+  useEffect(() => {
+    const initializeMqttConnection = async () => {
+      if (mqttInitializing) return; // Prevent multiple initialization attempts
+
+      setMqttInitializing(true);
+      try {
+        console.log('Initializing MQTT in detail page...', {
+          mqttStatus,
+          mqttConnected,
+        });
+
+        // Initialize MQTT service (this sets up subscriptions and event listeners)
+        await initializeMqtt();
+
+        // Connect to MQTT if not already connected
+        if (!mqttConnected && mqttStatus !== 'connecting') {
+          console.log('Connecting to MQTT in detail page...');
+          await connectMqtt();
+        }
+      } catch (error) {
+        console.error('Failed to initialize MQTT in detail page:', error);
+        // Show error alert after a delay to avoid rapid fire alerts
+        setTimeout(() => {
+          showAlert(
+            'MQTT Error',
+            'Failed to connect to MQTT broker. Please check your settings.',
+            'error'
+          );
+        }, 1000);
+      } finally {
+        setMqttInitializing(false);
+      }
+    };
+
+    // Initialize MQTT when component mounts or when MQTT status changes to disconnected/error
+    if (
+      mqttStatus === 'disconnected' ||
+      mqttStatus === 'error' ||
+      !mqttConnected
+    ) {
+      initializeMqttConnection();
+    }
+  }, [mqttStatus, mqttConnected]); // Re-run when MQTT status changes
+
+  // Handle MQTT status changes
+  useEffect(() => {
+    console.log(
+      'MQTT Status changed in detail page:',
+      mqttStatus,
+      'Connected:',
+      mqttConnected
+    );
+
+    if (mqttStatus === 'connected' && !mqttConnected) {
+      // MQTT just connected, update state
+      console.log('MQTT connected in detail page');
+    } else if (mqttStatus === 'disconnected' && mqttConnected) {
+      // MQTT disconnected, show error
+      console.log('MQTT disconnected in detail page');
+      showAlert(
+        'Connection Lost',
+        'MQTT connection was lost. Please check your connection.',
+        'error'
+      );
+    } else if (mqttStatus === 'error') {
+      // MQTT error occurred
+      console.log('MQTT error in detail page');
+      showAlert(
+        'Connection Error',
+        'Failed to connect to MQTT broker. Please check your settings.',
+        'error'
+      );
+    }
+  }, [mqttStatus, mqttConnected]);
+
   // MQTT subscriptions are now handled in the Zustand store
   // The store automatically subscribes to all necessary topics on connection
-
-  // connectMQTT is now handled by the useMqtt hook
 
   const onMessageArrived = (topic: string, payload: string) => {
     // console.log('onMessageArrived', topic, payload, '.......');
@@ -405,9 +566,16 @@ export default function DeviceDetailScreen() {
 
       // Handle AC JSON results/state (for Aircon device only)
       // ✅ State is now persisted in Zustand store automatically
+      const currentBroker = getCurrentBroker();
+      const acStatResultTopic = acStat('RESULT');
+      const acTeleStateTopic = acStat('STATE');
+      const acTeleLWTTTopic = acStat('LWT');
+
       if (
-        topic === `${AC_BASE_TOPIC}/stat/RESULT` ||
-        topic === `${AC_BASE_TOPIC}/tele/STATE`
+        topic === acStatResultTopic ||
+        topic === acTeleStateTopic ||
+        topic === `cloud/${AC_BASE_TOPIC}/stat/RESULT` ||
+        topic === `cloud/${AC_BASE_TOPIC}/tele/STATE`
       ) {
         try {
           const data = JSON.parse(payload);
@@ -420,7 +588,10 @@ export default function DeviceDetailScreen() {
 
       // Handle AC LWT online/offline (for Aircon device only)
       // ✅ Online status is now persisted in Zustand store automatically
-      if (topic === `${AC_BASE_TOPIC}/tele/LWT`) {
+      if (
+        topic === acTeleLWTTTopic ||
+        topic === `cloud/${AC_BASE_TOPIC}/tele/LWT`
+      ) {
         const online = payload?.toLowerCase() === 'online';
         setAcOnline(online);
         const ts = new Date().toLocaleString();
@@ -437,6 +608,22 @@ export default function DeviceDetailScreen() {
       }
       if (topic === 'home/test/lux') {
         // Handle light level if needed
+      }
+
+      // Handle AC sensor data (also check cloud topics)
+      const acSensorTopic = acStat('SENSOR');
+      if (
+        topic === acSensorTopic ||
+        topic === `cloud/${AC_BASE_TOPIC}/tele/SENSOR`
+      ) {
+        try {
+          const data = JSON.parse(payload);
+          if (typeof data.temperature === 'number') {
+            setTemperature(data.temperature as any);
+          }
+        } catch (_e) {
+          // ignore non-JSON payloads
+        }
       }
     } catch (error) {
       console.error('Error parsing MQTT message:', error);
@@ -466,8 +653,8 @@ export default function DeviceDetailScreen() {
     }
   };
 
-  const handlePowerToggle = (value: boolean) => {
-    if (!mqttConnected) {
+  const handlePowerToggle = async (value: boolean) => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -475,15 +662,34 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    setIsActive(value as any);
-    const deviceKey = getMqttDeviceKey();
-    if (deviceKey) {
-      publishSet(deviceKey, value ? 'ON' : 'OFF');
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      setIsActive(value as any);
+      const deviceKey = getMqttDeviceKey();
+      if (deviceKey) {
+        const success = publishSet(deviceKey, value ? 'ON' : 'OFF');
+        if (!success) {
+          showAlert('Error', 'Failed to send command to device', 'error');
+        }
+        // Don't show success alert - just update the UI silently
+      }
+    } catch (error) {
+      console.error('Error toggling device power:', error);
+      showAlert('Error', 'Failed to control device', 'error');
     }
   };
 
   const handleBrightnessChange = (value: number) => {
-    if (!mqttConnected) {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -491,14 +697,25 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
     const newBrightness = Math.max(0, Math.min(100, value));
     setBrightness(newBrightness);
     setDeviceBrightnessStore(newBrightness);
+    // Don't show success alert - just update the UI silently
   };
 
   // AC handlers
-  const handleAcPowerToggle = (value: boolean) => {
-    if (!mqttConnected) {
+  const handleAcPowerToggle = async (value: boolean) => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -506,13 +723,29 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    setAcPower(value as any);
-    setIsActive(value as any); // ✅ Sync main toggle with Aircon power
-    setAcPowerStore(value);
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      setAcPower(value as any);
+      setIsActive(value as any); // ✅ Sync main toggle with Aircon power
+      setAcPowerStore(value);
+      // Don't show success alert - just update the UI silently
+    } catch (error) {
+      console.error('Error controlling AC power:', error);
+      showAlert('Error', 'Failed to control AC', 'error');
+    }
   };
 
-  const handleAcTempChange = (value: number) => {
-    if (!mqttConnected) {
+  const handleAcTempChange = async (value: number) => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -520,13 +753,29 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    const t = Math.max(16, Math.min(30, Math.round(value)));
-    setAcTemp(t);
-    setAcTemperatureStore(t);
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      const t = Math.max(16, Math.min(30, Math.round(value)));
+      setAcTemp(t);
+      setAcTemperatureStore(t);
+      // Don't show success alert - just update the UI silently
+    } catch (error) {
+      console.error('Error setting AC temperature:', error);
+      showAlert('Error', 'Failed to set temperature', 'error');
+    }
   };
 
-  const handleAcModeChange = (mode: 'cool' | 'heat' | 'auto' | 'dry') => {
-    if (!mqttConnected) {
+  const handleAcModeChange = async (mode: 'cool' | 'heat' | 'auto' | 'dry') => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -534,12 +783,28 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    setAcMode(mode);
-    setAcModeStore(mode);
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      setAcMode(mode);
+      setAcModeStore(mode);
+      // Don't show success alert - just update the UI silently
+    } catch (error) {
+      console.error('Error setting AC mode:', error);
+      showAlert('Error', 'Failed to set mode', 'error');
+    }
   };
 
-  const handleSwingToggle = (axis: 'UD' | 'LR', value: boolean) => {
-    if (!mqttConnected) {
+  const handleSwingToggle = async (axis: 'UD' | 'LR', value: boolean) => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -547,13 +812,29 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    if (axis === 'UD') setSwingUpDown(value as any);
-    if (axis === 'LR') setSwingLeftRight(value as any);
-    setAcSwingStore(axis, value);
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      if (axis === 'UD') setSwingUpDown(value as any);
+      if (axis === 'LR') setSwingLeftRight(value as any);
+      setAcSwingStore(axis, value);
+      // Don't show success alert - just update the UI silently
+    } catch (error) {
+      console.error('Error setting AC swing:', error);
+      showAlert('Error', 'Failed to set swing', 'error');
+    }
   };
 
-  const handleAcFanChange = (speed: 'auto' | 'low' | 'med' | 'high') => {
-    if (!mqttConnected) {
+  const handleAcFanChange = async (speed: 'auto' | 'low' | 'med' | 'high') => {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -561,12 +842,28 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
-    setAcFanSpeed(speed);
-    setAcFanSpeedStore(speed);
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
+    try {
+      setAcFanSpeed(speed);
+      setAcFanSpeedStore(speed);
+      // Don't show success alert - just update the UI silently
+    } catch (error) {
+      console.error('Error setting AC fan speed:', error);
+      showAlert('Error', 'Failed to set fan speed', 'error');
+    }
   };
 
   const handleScheduleSet = (time: string) => {
-    if (!mqttConnected) {
+    if (!mqttConnected && mqttStatus !== 'connecting') {
       showAlert(
         'Error',
         'MQTT not connected. Please check your connection.',
@@ -574,9 +871,20 @@ export default function DeviceDetailScreen() {
       );
       return;
     }
+
+    if (mqttStatus === 'connecting') {
+      showAlert(
+        'Info',
+        'MQTT is connecting. Please wait a moment and try again.',
+        'info'
+      );
+      return;
+    }
+
     setSchedule(time);
     publishMessage('control', `SCHEDULE:${time}`);
     setShowScheduleModal(false);
+    // Don't show success alert - just update the UI silently
   };
 
   const handleCustomTimeSet = () => {
@@ -963,7 +1271,7 @@ export default function DeviceDetailScreen() {
                     ? 'Device Online'
                     : 'Device Offline'
                   : mqttStatus === 'connected'
-                  ? 'Connected'
+                  ? `Connected (${currentBroker.toUpperCase()})`
                   : mqttStatus === 'connecting'
                   ? 'Connecting...'
                   : 'Disconnected'}
@@ -1714,5 +2022,34 @@ const styles = StyleSheet.create({
   },
   modeChipTextActive: {
     color: '#ffffff',
+  },
+
+  // Network and Broker Info Styles
+  networkInfoContainer: {
+    marginTop: 12,
+    gap: 8,
+  },
+  networkIndicator: {
+    marginBottom: 0,
+  },
+  brokerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  brokerLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
+  },
+  brokerValue: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
   },
 });
