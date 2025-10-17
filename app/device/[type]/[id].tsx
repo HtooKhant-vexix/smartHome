@@ -11,6 +11,7 @@ import {
   Modal,
   Dimensions,
   PanResponder,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,6 +24,7 @@ import {
   Sliders,
   Battery,
   Wifi,
+  WifiOff,
   Wind,
   Send,
   Sun,
@@ -46,6 +48,7 @@ import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
 import { NetworkIndicator } from '../../../components/NetworkIndicator';
+import { networkDetector, NetworkInfo } from '../../../utils/networkDetection';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // Use centralized topic helpers
@@ -198,6 +201,7 @@ export default function DeviceDetailScreen() {
   const subscribeMqtt = useSmartHomeStore((state) => state.subscribeMqtt);
   const connectMqtt = useSmartHomeStore((state) => state.connectMqtt);
   const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
+  const switchMqttBroker = useSmartHomeStore((state) => state.switchMqttBroker);
 
   // Loading state for MQTT initialization
   const [mqttInitializing, setMqttInitializing] = useState(false);
@@ -227,6 +231,34 @@ export default function DeviceDetailScreen() {
     message: '',
     type: 'info',
   });
+
+  // Network change notification state
+  const [networkChangeAlert, setNetworkChangeAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
+
+  // Connection loss alert with cloud switch confirmation
+  const [connectionLossAlert, setConnectionLossAlert] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+
+  // Previous network state for comparison
+  const [previousNetworkInfo, setPreviousNetworkInfo] =
+    useState<NetworkInfo | null>(null);
   const [showBrightnessModal, setShowBrightnessModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showPowerModal, setShowPowerModal] = useState(false);
@@ -250,6 +282,32 @@ export default function DeviceDetailScreen() {
   );
   const [acOnline, setAcOnline] = useState<boolean>(false);
   const [acLastSeen, setAcLastSeen] = useState<string>('');
+
+  // Animated values for custom switches
+  const verticalSwitchAnimation = useRef(
+    new Animated.Value(swingUpDown ? 11 : -11)
+  ).current;
+  const horizontalSwitchAnimation = useRef(
+    new Animated.Value(swingLeftRight ? 11 : -11)
+  ).current;
+
+  // Animate vertical switch thumb
+  useEffect(() => {
+    Animated.timing(verticalSwitchAnimation, {
+      toValue: swingUpDown ? 11 : -11,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [swingUpDown]);
+
+  // Animate horizontal switch thumb
+  useEffect(() => {
+    Animated.timing(horizontalSwitchAnimation, {
+      toValue: swingLeftRight ? 11 : -11,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [swingLeftRight]);
 
   const applyAcState = (data: any) => {
     if (typeof data !== 'object' || !data) return;
@@ -518,6 +576,114 @@ export default function DeviceDetailScreen() {
     }
   }, [mqttStatus, mqttConnected]); // Re-run when MQTT status changes
 
+  // Network change monitoring and notifications
+  useEffect(() => {
+    let unsubscribeNetwork: (() => void) | null = null;
+
+    const setupNetworkMonitoring = async () => {
+      try {
+        // Get initial network info
+        const initialNetworkInfo = await networkDetector.getNetworkInfo();
+        setPreviousNetworkInfo(initialNetworkInfo);
+
+        // Set up network change listener
+        unsubscribeNetwork = networkDetector.addNetworkListener(
+          (networkInfo) => {
+            // Only show notifications for significant changes
+            if (!previousNetworkInfo) {
+              setPreviousNetworkInfo(networkInfo);
+
+              // Show initial network status if we're on external network with local broker
+              if (
+                networkInfo.isConnected &&
+                !networkInfo.isLocalNetwork &&
+                currentBroker === 'local'
+              ) {
+                setTimeout(() => {
+                  setConnectionLossAlert({
+                    visible: true,
+                    title: 'External Network Detected',
+                    message:
+                      "You're on an external network but connected to the local broker. Would you like to switch to the cloud broker for better connectivity?",
+                  });
+                }, 3000); // Show after 3 seconds to let UI load
+              }
+              return;
+            }
+
+            const wasConnected = previousNetworkInfo.isConnected;
+            const isConnected = networkInfo.isConnected;
+            const wasLocal = previousNetworkInfo.isLocalNetwork;
+            const isLocal = networkInfo.isLocalNetwork;
+
+            // Connection lost notification
+            if (wasConnected && !isConnected) {
+              setNetworkChangeAlert({
+                visible: true,
+                title: 'Connection Lost',
+                message:
+                  'Network connection has been lost. Device control may be unavailable.',
+                type: 'error',
+              });
+            }
+            // Connection restored notification
+            else if (!wasConnected && isConnected) {
+              setNetworkChangeAlert({
+                visible: true,
+                title: 'Connection Restored',
+                message: `Connected to ${
+                  isLocal ? 'home' : 'external'
+                } network.`,
+                type: 'success',
+              });
+            }
+            // Network type changed (local <-> external)
+            else if (wasConnected && isConnected && wasLocal !== isLocal) {
+              setNetworkChangeAlert({
+                visible: true,
+                title: 'Network Changed',
+                message: `Switched to ${
+                  isLocal ? 'home' : 'external'
+                } network.`,
+                type: 'info',
+              });
+
+              // If switched from local to external, suggest switching to cloud
+              if (
+                wasLocal &&
+                !isLocal &&
+                mqttConnected &&
+                currentBroker === 'local'
+              ) {
+                setTimeout(() => {
+                  setConnectionLossAlert({
+                    visible: true,
+                    title: 'Switch to Cloud Broker?',
+                    message:
+                      "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
+                  });
+                }, 2000); // Show after 2 seconds to not overwhelm user
+              }
+            }
+
+            setPreviousNetworkInfo(networkInfo);
+          }
+        );
+      } catch (error) {
+        console.error('Failed to set up network monitoring:', error);
+      }
+    };
+
+    setupNetworkMonitoring();
+
+    // Cleanup function
+    return () => {
+      if (unsubscribeNetwork) {
+        unsubscribeNetwork();
+      }
+    };
+  }, [previousNetworkInfo, mqttConnected, currentBroker]);
+
   // Handle MQTT status changes
   useEffect(() => {
     console.log(
@@ -651,6 +817,61 @@ export default function DeviceDetailScreen() {
       showAlert('Error', 'Failed to publish message', 'error');
       console.error('Publish error:', error);
     }
+  };
+
+  // Network alert handlers
+  const handleNetworkChangeAlertClose = () => {
+    setNetworkChangeAlert({
+      visible: false,
+      title: '',
+      message: '',
+      type: 'info',
+    });
+  };
+
+  // Connection loss alert with cloud switch confirmation
+  const handleConnectionLossAlertClose = () => {
+    setConnectionLossAlert({
+      visible: false,
+      title: '',
+      message: '',
+    });
+  };
+
+  const handleSwitchToCloud = async () => {
+    try {
+      setConnectionLossAlert({
+        visible: false,
+        title: '',
+        message: '',
+      });
+
+      const success = await switchMqttBroker('cloud');
+      if (success) {
+        showAlert(
+          'Success',
+          'Successfully switched to cloud broker.',
+          'success'
+        );
+      } else {
+        showAlert(
+          'Error',
+          'Failed to switch to cloud broker. Please try again.',
+          'error'
+        );
+      }
+    } catch (error) {
+      console.error('Error switching to cloud broker:', error);
+      showAlert('Error', 'Failed to switch to cloud broker.', 'error');
+    }
+  };
+
+  const handleStayOnLocal = () => {
+    setConnectionLossAlert({
+      visible: false,
+      title: '',
+      message: '',
+    });
   };
 
   const handlePowerToggle = async (value: boolean) => {
@@ -1303,37 +1524,50 @@ export default function DeviceDetailScreen() {
 
         {/* Quick Controls */}
         {deviceType === 'smart-ac' ? (
-          <View style={styles.controlsContainer}>
+          <View style={styles.airconControlsContainer}>
             <Text style={styles.sectionTitle}>Aircon Controls</Text>
-            <View style={styles.controlsGrid}>
+            <View style={styles.airconControlsGrid}>
               <View style={styles.controlItem}>
                 <View style={styles.controlIcon}>
                   <Thermometer size={24} color="#2563eb" />
                 </View>
                 <View style={styles.controlInfo}>
                   <Text style={styles.controlLabel}>Temperature</Text>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}
-                  >
+                  <View style={styles.temperatureControl}>
+                    <View style={styles.temperatureDisplay}>
+                      <Text style={styles.temperatureValue}>{acTemp}</Text>
+                      <Text style={styles.temperatureUnit}>°C</Text>
+                    </View>
+                  </View>
+                  <View style={styles.temperatureControl1}>
                     <TouchableOpacity
-                      style={styles.brightnessButton}
+                      style={[
+                        styles.tempButton,
+                        acTemp <= 16 && styles.tempButtonDisabled,
+                      ]}
                       onPress={() => handleAcTempChange(acTemp - 1)}
+                      disabled={acTemp <= 16}
                     >
-                      <Minus size={20} color="white" />
+                      <Minus
+                        size={20}
+                        color={acTemp <= 16 ? '#64748b' : 'white'}
+                      />
                     </TouchableOpacity>
-                    <Text style={styles.controlValue}>{acTemp}°C</Text>
+
                     <TouchableOpacity
-                      style={styles.brightnessButton}
+                      style={[
+                        styles.tempButton,
+                        acTemp >= 30 && styles.tempButtonDisabled,
+                      ]}
                       onPress={() => handleAcTempChange(acTemp + 1)}
+                      disabled={acTemp >= 30}
                     >
-                      <Plus size={20} color="white" />
+                      <Plus
+                        size={20}
+                        color={acTemp >= 30 ? '#64748b' : 'white'}
+                      />
                     </TouchableOpacity>
                   </View>
-                  {/* Slider removed to avoid duplicate temperature publishes */}
                 </View>
               </View>
 
@@ -1343,9 +1577,7 @@ export default function DeviceDetailScreen() {
                 </View>
                 <View style={styles.controlInfo}>
                   <Text style={styles.controlLabel}>Mode</Text>
-                  <View
-                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
-                  >
+                  <View style={styles.modeContainer}>
                     {(['cool', 'heat', 'auto', 'dry'] as const).map((m) => (
                       <TouchableOpacity
                         key={m}
@@ -1375,22 +1607,20 @@ export default function DeviceDetailScreen() {
                 </View>
                 <View style={styles.controlInfo}>
                   <Text style={styles.controlLabel}>Fan Speed</Text>
-                  <View
-                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
-                  >
+                  <View style={styles.fanSpeedContainer}>
                     {(['auto', 'low', 'med', 'high'] as const).map((s) => (
                       <TouchableOpacity
                         key={s}
                         onPress={() => handleAcFanChange(s)}
                         style={[
-                          styles.modeChip,
-                          acFanSpeed === s && styles.modeChipActive,
+                          styles.fanSpeedChip,
+                          acFanSpeed === s && styles.fanSpeedChipActive,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.modeChipText,
-                            acFanSpeed === s && styles.modeChipTextActive,
+                            styles.fanSpeedChipText,
+                            acFanSpeed === s && styles.fanSpeedChipTextActive,
                           ]}
                         >
                           {s.toUpperCase()}
@@ -1406,37 +1636,71 @@ export default function DeviceDetailScreen() {
                   <Wind size={24} color="#2563eb" />
                 </View>
                 <View style={styles.controlInfo}>
-                  <Text style={styles.controlLabel}>Swing</Text>
-                  <View style={{ gap: 8 }}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <Text style={styles.controlValue}>Up/Down</Text>
-                      <Switch
-                        value={swingUpDown}
-                        onValueChange={(v) => handleSwingToggle('UD', v)}
-                        trackColor={{ false: '#334155', true: '#2563eb' }}
-                        thumbColor="white"
-                      />
+                  <Text style={styles.controlLabel}>Swing Control</Text>
+                  <View style={styles.swingControls}>
+                    <View style={styles.swingControl}>
+                      <View style={styles.swingLabelContainer}>
+                        {/* <Wind size={16} color="#94a3b8" /> */}
+                        <Text style={styles.swingLabel}>Vertical</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.customSwitch,
+                          swingUpDown
+                            ? styles.customSwitchActive
+                            : styles.customSwitchInactive,
+                        ]}
+                        onPress={() => handleSwingToggle('UD', !swingUpDown)}
+                        activeOpacity={0.8}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.customSwitchThumb,
+                            swingUpDown
+                              ? styles.customSwitchThumbActive
+                              : styles.customSwitchThumbInactive,
+                            {
+                              transform: [
+                                { translateX: verticalSwitchAnimation },
+                              ],
+                            },
+                          ]}
+                        />
+                      </TouchableOpacity>
                     </View>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <Text style={styles.controlValue}>Left/Right</Text>
-                      <Switch
-                        value={swingLeftRight}
-                        onValueChange={(v) => handleSwingToggle('LR', v)}
-                        trackColor={{ false: '#334155', true: '#2563eb' }}
-                        thumbColor="white"
-                      />
+                    <View style={styles.swingControl}>
+                      <View style={styles.swingLabelContainer}>
+                        {/* <Wind
+                          size={16}
+                          color="#94a3b8"
+                          style={{ transform: [{ rotate: '90deg' }] }}
+                        /> */}
+                        <Text style={styles.swingLabel}>Horizontal</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.customSwitch,
+                          swingLeftRight
+                            ? styles.customSwitchActive
+                            : styles.customSwitchInactive,
+                        ]}
+                        onPress={() => handleSwingToggle('LR', !swingLeftRight)}
+                        activeOpacity={0.8}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.customSwitchThumb,
+                            swingLeftRight
+                              ? styles.customSwitchThumbActive
+                              : styles.customSwitchThumbInactive,
+                            {
+                              transform: [
+                                { translateX: horizontalSwitchAnimation },
+                              ],
+                            },
+                          ]}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>
@@ -1578,6 +1842,61 @@ export default function DeviceDetailScreen() {
         type={alert.type}
         onClose={hideAlert}
       />
+
+      {/* Network Change Alert */}
+      <CustomAlert
+        visible={networkChangeAlert.visible}
+        title={networkChangeAlert.title}
+        message={networkChangeAlert.message}
+        type={networkChangeAlert.type}
+        onClose={handleNetworkChangeAlertClose}
+      />
+
+      {/* Connection Loss Alert with Cloud Switch Confirmation */}
+      <Modal
+        visible={connectionLossAlert.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleConnectionLossAlertClose}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={handleConnectionLossAlertClose}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={24} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.iconContainer, { borderColor: '#2563eb' }]}>
+              <Wifi size={32} color="#2563eb" />
+            </View>
+
+            <Text style={styles.modalTitle}>{connectionLossAlert.title}</Text>
+            <Text style={styles.message}>{connectionLossAlert.message}</Text>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#2563eb' }]}
+                onPress={handleSwitchToCloud}
+              >
+                <Text style={styles.buttonText}>Switch to Cloud</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#334155' }]}
+                onPress={handleStayOnLocal}
+              >
+                <Text style={styles.buttonText}>Stay on Local</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1651,6 +1970,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 24,
   },
+  airconControlsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
   sectionTitle: {
     fontSize: 20,
     fontFamily: 'Inter-SemiBold',
@@ -1662,10 +1985,16 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginHorizontal: -8,
   },
+  airconControlsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -8,
+    // gap: 8,
+  },
   controlItem: {
     width: '50%',
     paddingHorizontal: 8,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   controlIcon: {
     width: 40,
@@ -2022,6 +2351,197 @@ const styles = StyleSheet.create({
   },
   modeChipTextActive: {
     color: '#ffffff',
+  },
+
+  // Temperature control styles
+  temperatureControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // gap: 10,
+    marginTop: 8,
+  },
+  temperatureControl1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -11,
+  },
+  tempButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  tempButtonDisabled: {
+    backgroundColor: '#1e293b',
+    borderColor: '#374151',
+    opacity: 0.5,
+  },
+  temperatureDisplay: {
+    alignItems: 'center',
+    minWidth: 55,
+    marginTop: -8,
+    // backgroundColor: 'red',
+    // paddingHorizontal: 20,
+  },
+  temperatureValue: {
+    fontSize: 32,
+    fontFamily: 'Inter-Bold',
+    color: 'white',
+    lineHeight: 36,
+  },
+  temperatureUnit: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
+    marginLeft: 24,
+    marginTop: -4,
+  },
+
+  // Mode and Fan Speed control styles
+  modeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  fanSpeedContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  fanSpeedChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  fanSpeedChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  fanSpeedChipText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+  },
+  fanSpeedChipTextActive: {
+    color: '#ffffff',
+  },
+
+  // Swing control styles
+  swingControls: {
+    gap: 16,
+    marginTop: 8,
+  },
+  swingControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  swingLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  swingLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#94a3b8',
+  },
+
+  // Custom Switch Styles
+  customSwitch: {
+    width: 48,
+    marginStart: 'auto',
+    height: 28,
+    borderRadius: 17,
+    padding: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    marginLeft: 8,
+  },
+  customSwitchActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  customSwitchInactive: {
+    backgroundColor: '#334155',
+    borderColor: '#475569',
+  },
+  customSwitchThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 13,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  customSwitchThumbActive: {
+    backgroundColor: 'white',
+    transform: [{ translateX: 11 }],
+  },
+  customSwitchThumbInactive: {
+    backgroundColor: '#94a3b8',
+    transform: [{ translateX: -11 }],
+  },
+
+  // Modal styles for connection loss alert
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+
+  // Modal styles for connection loss alert (extending existing styles)
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+
+  message: {
+    fontSize: 16,
+    color: '#e2e8f0',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+
+  button: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // Network and Broker Info Styles

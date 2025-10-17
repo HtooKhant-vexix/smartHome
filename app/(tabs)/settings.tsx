@@ -274,7 +274,6 @@ function MQTTBridgeSection() {
             </TouchableOpacity>
           </View>
         </View>
-
         {/* Broker Information */}
         {/* <View style={styles.brokerInfo}>
           <View style={styles.brokerRow}>
@@ -290,92 +289,91 @@ function MQTTBridgeSection() {
             </Text>
           </View>
         </View> */}
-
         {/* Network Information */}
         {/* <View style={styles.networkSection}>
           <Text style={styles.sectionTitle}>Network Status</Text>
           <NetworkIndicator style={styles.networkIndicator} />
-        </View> */}  <View style={styles.testSection}>
-        <Text style={styles.testTitle}>Broker Testing</Text>
+        </View> */}{' '}
+        <View style={styles.testSection}>
+          <Text style={styles.testTitle}>Broker Testing</Text>
 
-        <TouchableOpacity
-          style={[
-            styles.testButton,
-            isTestingLocal && styles.testButtonActive,
-            testResults.local === false && styles.testButtonError,
-          ]}
-          onPress={() => testBroker('local')}
-          disabled={isTestingLocal}
-        >
-          {isTestingLocal ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <WifiIcon size={20} color="#ffffff" />
-              <Text style={styles.testButtonText}>
-                Test Local (
-                {testResults.local === true
-                  ? '✓'
-                  : testResults.local === false
-                  ? '✗'
-                  : '?'}
-                )
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              isTestingLocal && styles.testButtonActive,
+              testResults.local === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('local')}
+            disabled={isTestingLocal}
+          >
+            {isTestingLocal ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <WifiIcon size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Local (
+                  {testResults.local === true
+                    ? '✓'
+                    : testResults.local === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.testButton,
-            styles.cloudTestButton,
-            isTestingCloud && styles.testButtonActive,
-            testResults.cloud === false && styles.testButtonError,
-          ]}
-          onPress={() => testBroker('cloud')}
-          disabled={isTestingCloud}
-        >
-          {isTestingCloud ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Server size={20} color="#ffffff" />
-              <Text style={styles.testButtonText}>
-                Test Cloud (
-                {testResults.cloud === true
-                  ? '✓'
-                  : testResults.cloud === false
-                  ? '✗'
-                  : '?'}
-                )
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.cloudTestButton,
+              isTestingCloud && styles.testButtonActive,
+              testResults.cloud === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('cloud')}
+            disabled={isTestingCloud}
+          >
+            {isTestingCloud ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Server size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Cloud (
+                  {testResults.cloud === true
+                    ? '✓'
+                    : testResults.cloud === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.testButton,
-            styles.bridgeTestButton,
-            isTestingBridge && styles.testButtonActive,
-          ]}
-          onPress={testBridge}
-          disabled={isTestingBridge}
-        >
-          {isTestingBridge ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Router size={20} color="#ffffff" />
-              <Text style={styles.testButtonText}>Test Bridge</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.bridgeTestButton,
+              isTestingBridge && styles.testButtonActive,
+            ]}
+            onPress={testBridge}
+            disabled={isTestingBridge}
+          >
+            {isTestingBridge ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Router size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>Test Bridge</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Broker Testing */}
-    
 
       {/* Bridge Test Results */}
       {bridgeTestResults && (
