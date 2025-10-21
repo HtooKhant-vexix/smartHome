@@ -1,7 +1,6 @@
 import { Tabs } from 'expo-router';
 import {
   Chrome as Home,
-  ChartBar as BarChart3,
   Settings,
   User,
   ChartPie,

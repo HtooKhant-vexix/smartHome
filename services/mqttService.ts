@@ -1,5 +1,6 @@
 import Paho from 'paho-mqtt';
 import { EventEmitter } from 'eventemitter3';
+import { networkDetector } from '../utils/networkDetection';
 
 // MQTT Broker Types
 export type BrokerType = 'local' | 'cloud';
@@ -77,6 +78,7 @@ export interface MqttServiceEvents {
   message: (topic: string, message: string) => void;
   error: (error: any) => void;
   statusChanged: (status: MqttConnectionStatus) => void;
+  brokerChanged: (brokerType: BrokerType) => void;
 }
 
 // MQTT Bridge Status
@@ -210,7 +212,11 @@ function createService(
   };
 
   const subscribedTopics = new Set<string>();
+  const subscriptionAttempts = new Map<string, number>(); // Track subscription attempts per topic
   const emitter = new EventEmitter<MqttServiceEvents>();
+
+  // Connection state guards to prevent multiple simultaneous operations
+  let isConnecting = false;
 
   const setStatus = (newStatus: MqttBridgeStatus) => {
     if (status !== newStatus) {
@@ -468,7 +474,9 @@ function createService(
             const mqttError = classifyMqttError(error, brokerType);
             logMqttEvent('warn', 'Broker test failed', {
               brokerType,
-              error: mqttError,
+              errorType: mqttError.type,
+              errorMessage: mqttError.message,
+              retryable: mqttError.retryable,
             });
             updateCircuitBreaker(brokerType, false);
             resolve(false);
@@ -530,6 +538,9 @@ function createService(
       currentBroker = brokerType;
       config = { ...brokerConfigs[brokerType] };
 
+      // Emit broker changed event immediately so UI can update
+      emitter.emit('brokerChanged', brokerType);
+
       // Test new broker availability first
       logMqttEvent('info', 'Testing broker availability', { brokerType });
       const isReachable = await testBrokerConnection(brokerType);
@@ -571,9 +582,47 @@ function createService(
   const detectBestBroker = async (): Promise<BrokerType> => {
     console.log('🔍 Detecting best available MQTT broker...');
 
-    // Import network detector to check if we're on the same subnet
-    const { networkDetector } = require('../utils/networkDetection');
-    const networkInfo = await networkDetector.getNetworkInfo();
+    // Network detector is already imported at the top of the file
+
+    // Wait for network detection to be ready (with timeout)
+    let networkInfo = networkDetector.getCurrentNetwork();
+    let attempts = 0;
+    const maxAttempts = 10; // 5 seconds max wait
+
+    while (!networkInfo && attempts < maxAttempts) {
+      console.log('⏳ Waiting for network detection...');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      networkInfo = networkDetector.getCurrentNetwork();
+      attempts++;
+    }
+
+    // If still no network info, try to get fresh info
+    if (!networkInfo) {
+      try {
+        networkInfo = await networkDetector.getNetworkInfo();
+        console.log('✅ Got fresh network info:', networkInfo);
+      } catch (error) {
+        console.warn('Failed to get network info, using fallback:', error);
+        // Try one more time with a longer delay
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        try {
+          networkInfo = await networkDetector.getNetworkInfo();
+          console.log('✅ Got network info on retry:', networkInfo);
+        } catch (retryError) {
+          console.error(
+            'Failed to get network info on retry, using fallback:',
+            retryError
+          );
+          networkInfo = {
+            isConnected: false,
+            isLocalNetwork: false,
+            networkType: 'unknown',
+            ssid: 'Unknown',
+            ipAddress: undefined,
+          };
+        }
+      }
+    }
 
     console.log('📡 Network info:', networkInfo);
 
@@ -581,12 +630,44 @@ function createService(
     let selectedBroker: BrokerType = 'cloud'; // Default fallback
     let allBrokersFailed = true;
 
-    // Always prioritize local broker first (default behavior)
-    console.log('🏠 Prioritizing local broker first...');
-    brokersToTest.unshift('local'); // Test local first
+    // Check network type to determine broker priority
+    const isLocalNetwork = networkInfo?.isLocalNetwork || false;
+    const connectedSsid = networkInfo?.ssid || '';
 
-    // Always test cloud as fallback
-    brokersToTest.push('cloud');
+    console.log(
+      `📶 Network info: ${connectedSsid} (isLocal: ${isLocalNetwork})`
+    );
+
+    // Additional check: if SSID contains known local network indicators
+    const isLikelyLocalNetwork = connectedSsid
+      .toLowerCase()
+      .includes('pos_server_old');
+
+    // Also check IP address patterns for local networks
+    const isLikelyLocalByIP =
+      networkInfo?.ipAddress?.startsWith('192.168.0.100');
+
+    if (isLocalNetwork || isLikelyLocalNetwork || isLikelyLocalByIP) {
+      // On local network - prioritize local broker first, cloud as fallback
+      console.log(
+        `🏠 On local network (${
+          isLikelyLocalNetwork
+            ? 'SSID-based detection'
+            : isLikelyLocalByIP
+            ? 'IP-based detection'
+            : 'Network API detection'
+        }) - prioritizing local broker first, cloud as fallback...`
+      );
+      brokersToTest.unshift('local'); // Test local first
+      brokersToTest.push('cloud'); // Cloud as fallback
+    } else {
+      // On external/cloud network - prioritize cloud broker first, NO local fallback
+      console.log(
+        '☁️ On external network - prioritizing cloud broker first, no local fallback...'
+      );
+      brokersToTest.unshift('cloud'); // Test cloud first only
+      // Don't add local to fallback list for external networks
+    }
 
     // Test brokers in priority order with graceful fallback
     for (const brokerType of brokersToTest) {
@@ -623,6 +704,12 @@ function createService(
           console.log(`✅ ${brokerType} broker is available and healthy`);
           selectedBroker = brokerType;
           allBrokersFailed = false;
+
+          // Emit broker changed event immediately when broker is selected
+          if (currentBroker !== brokerType) {
+            emitter.emit('brokerChanged', brokerType);
+          }
+
           break; // Found a working broker
         } else {
           console.warn(`❌ ${brokerType} broker is not available`);
@@ -664,23 +751,58 @@ function createService(
         });
       }
 
-      // Return the broker with the least failures as last resort
-      const bestFallback = Object.entries(brokerHealth).reduce(
-        (best, [brokerType, health]) => {
-          if (health.failureCount < best.health.failureCount) {
-            return { brokerType: brokerType as BrokerType, health };
-          }
-          return best;
-        },
-        { brokerType: 'cloud' as BrokerType, health: brokerHealth.cloud }
-      );
+      // If we couldn't determine network type but have IP info, make educated guess
+      if (
+        networkInfo?.ipAddress &&
+        !isLocalNetwork &&
+        !isLikelyLocalNetwork &&
+        !isLikelyLocalByIP
+      ) {
+        const isLikelyLocalByIPFallback =
+          networkInfo.ipAddress.startsWith('192.168.') ||
+          networkInfo.ipAddress.startsWith('10.') ||
+          networkInfo.ipAddress.startsWith('172.');
 
-      console.warn(
-        `🛟 Using ${bestFallback.brokerType} as last resort fallback`
-      );
-      selectedBroker = bestFallback.brokerType;
+        if (isLikelyLocalByIPFallback) {
+          console.log(
+            '🔍 IP address suggests local network, trying local broker as last resort'
+          );
+          selectedBroker = 'local';
+        } else {
+          console.log(
+            '🔍 IP address suggests external network, using cloud as last resort'
+          );
+          selectedBroker = 'cloud';
+        }
+      } else {
+        // Return the broker with the least failures as last resort
+        const bestFallback = Object.entries(brokerHealth).reduce(
+          (best, [brokerType, health]) => {
+            if (health.failureCount < best.health.failureCount) {
+              return { brokerType: brokerType as BrokerType, health };
+            }
+            return best;
+          },
+          { brokerType: 'cloud' as BrokerType, health: brokerHealth.cloud }
+        );
+
+        console.warn(
+          `🛟 Using ${bestFallback.brokerType} as last resort fallback`
+        );
+        selectedBroker = bestFallback.brokerType;
+      }
+
+      // Emit broker changed event for fallback selection
+      if (currentBroker !== selectedBroker) {
+        emitter.emit('brokerChanged', selectedBroker);
+      }
     } else {
       console.log(`🎯 Selected ${selectedBroker} broker`);
+
+      // Emit broker changed event if broker selection changed
+      if (currentBroker !== selectedBroker) {
+        emitter.emit('brokerChanged', selectedBroker);
+      }
     }
 
     return selectedBroker;
@@ -740,17 +862,40 @@ function createService(
         return true;
       }
 
+      // Prevent multiple simultaneous connection attempts
+      if (isConnecting) {
+        console.log('Connection attempt already in progress, waiting...');
+        // Wait for existing connection attempt to complete
+        let attempts = 0;
+        while (isConnecting && attempts < 50) {
+          // Max 5 seconds wait
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          attempts++;
+        }
+        return isConnected();
+      }
+
+      isConnecting = true;
+
       try {
-        // Detect best broker before setting status
-        console.log('Starting broker detection...');
+        // Detect best broker BEFORE attempting connection
+        console.log('🔍 Starting broker detection before connection...');
         const bestBroker = await detectBestBroker();
         console.log(
-          `Selected broker: ${bestBroker}, current broker: ${currentBroker}`
+          `🎯 Selected broker: ${bestBroker}, current broker: ${currentBroker}`
         );
 
+        // Switch to the best broker if different from current
         if (bestBroker !== currentBroker) {
-          console.log(`Auto-switching to ${bestBroker} broker`);
-          await switchToBroker(bestBroker);
+          console.log(
+            `🔄 Auto-switching to ${bestBroker} broker before connection`
+          );
+          const switchSuccess = await switchToBroker(bestBroker);
+          if (!switchSuccess) {
+            console.warn(
+              `⚠️ Failed to switch to ${bestBroker} broker, using current broker`
+            );
+          }
         }
 
         setStatus('connecting');
@@ -775,7 +920,24 @@ function createService(
               updateCircuitBreaker(currentBroker, true);
 
               emitter.emit('connected');
-              subscribedTopics.forEach((topic) => client?.subscribe(topic));
+
+              // Resubscribe to topics only if we have a valid client
+              // and we're not already subscribed (prevent duplicate subscriptions)
+              if (client && subscribedTopics.size > 0) {
+                console.log(
+                  `📡 Resubscribing to ${subscribedTopics.size} topics`
+                );
+                subscribedTopics.forEach((topic) => {
+                  try {
+                    client!.subscribe(topic, { qos: 1 });
+                  } catch (error) {
+                    console.warn(
+                      `Failed to resubscribe to topic ${topic}:`,
+                      error
+                    );
+                  }
+                });
+              }
               resolve(true);
             },
             onFailure: (error: Paho.ErrorWithInvocationContext) => {
@@ -786,39 +948,58 @@ function createService(
               updateCircuitBreaker(currentBroker, false);
 
               // If this was a local broker connection attempt and it failed,
-              // immediately try cloud broker as fallback
+              // only try cloud broker as fallback if we're on local network
               if (currentBroker === 'local' && mqttError.retryable) {
-                console.log(
-                  '🔄 Local broker failed, attempting cloud broker fallback...'
-                );
-                setTimeout(async () => {
-                  try {
-                    const cloudSuccess = await switchToBroker('cloud');
-                    if (cloudSuccess) {
-                      console.log('✅ Successfully switched to cloud broker');
-                    } else {
-                      console.error('❌ Cloud broker fallback also failed');
+                // Check if we're on local network before attempting cloud fallback
+                const networkInfo = networkDetector.getCurrentNetwork();
+
+                if (networkInfo?.isLocalNetwork) {
+                  console.log(
+                    '🔄 Local broker failed on local network, attempting cloud broker fallback...'
+                  );
+                  setTimeout(async () => {
+                    try {
+                      const cloudSuccess = await switchToBroker('cloud');
+                      if (cloudSuccess) {
+                        console.log('✅ Successfully switched to cloud broker');
+                      } else {
+                        console.error('❌ Cloud broker fallback also failed');
+                        setStatus('error');
+                        emitter.emit('error', error);
+                        reject(
+                          new Error(
+                            `MQTT Connection failed: ${
+                              error.errorMessage || 'Unknown error'
+                            }`
+                          )
+                        );
+                      }
+                    } catch (switchError) {
+                      console.error(
+                        '❌ Error during cloud broker fallback:',
+                        switchError
+                      );
                       setStatus('error');
                       emitter.emit('error', error);
-                      reject(
-                        new Error(
-                          `MQTT Connection failed: ${
-                            error.errorMessage || 'Unknown error'
-                          }`
-                        )
-                      );
+                      reject(error);
                     }
-                  } catch (switchError) {
-                    console.error(
-                      '❌ Error during cloud broker fallback:',
-                      switchError
-                    );
-                    setStatus('error');
-                    emitter.emit('error', error);
-                    reject(error);
-                  }
-                }, 1000); // Small delay before attempting fallback
-                return; // Don't immediately fail, wait for fallback attempt
+                  }, 1000); // Small delay before attempting fallback
+                  return; // Don't immediately fail, wait for fallback attempt
+                } else {
+                  console.log(
+                    '🔄 Local broker failed on external network, no automatic cloud fallback (user preference)'
+                  );
+                  // Don't attempt automatic fallback on external networks
+                  setStatus('error');
+                  emitter.emit('error', error);
+                  reject(
+                    new Error(
+                      `MQTT Connection failed: ${
+                        error.errorMessage || 'Unknown error'
+                      }`
+                    )
+                  );
+                }
               }
 
               setStatus('error');
@@ -841,9 +1022,7 @@ function createService(
 
           if (client) {
             client.onMessageArrived = (message: Paho.Message) => {
-              console.log(
-                `📥 Received MQTT message - Topic: ${message.destinationName}, Message: ${message.payloadString}`
-              );
+              // Don't log messages here to reduce console noise - logging is handled by subscribers
               emitter.emit(
                 'message',
                 message.destinationName,
@@ -856,7 +1035,11 @@ function createService(
                 responseObject,
                 currentBroker
               );
-              console.warn('📡 MQTT Connection lost:', mqttError);
+              logMqttEvent('warn', 'MQTT Connection lost', {
+                errorType: mqttError.type,
+                errorMessage: mqttError.message,
+                retryable: mqttError.retryable,
+              });
 
               // Update circuit breaker
               updateCircuitBreaker(currentBroker, false);
@@ -864,45 +1047,65 @@ function createService(
               setStatus('disconnected');
               emitter.emit('disconnected');
 
-              // If we're on local broker and connection was lost, try cloud fallback
+              // If we're on local broker and connection was lost, only try cloud fallback if on local network
               if (currentBroker === 'local' && mqttError.retryable) {
-                console.log(
-                  '🔄 Local broker connection lost, attempting cloud fallback...'
-                );
-                setTimeout(async () => {
-                  try {
-                    const cloudSuccess = await switchToBroker('cloud');
-                    if (cloudSuccess) {
-                      console.log(
-                        '✅ Successfully switched to cloud broker after connection loss'
-                      );
-                    } else {
-                      console.warn(
-                        '⚠️ Cloud broker fallback failed, will retry local connection'
+                // Check if we're on local network before attempting cloud fallback
+                const networkInfo = networkDetector.getCurrentNetwork();
+
+                if (networkInfo?.isLocalNetwork) {
+                  console.log(
+                    '🔄 Local broker connection lost on local network, attempting cloud fallback...'
+                  );
+                  setTimeout(async () => {
+                    try {
+                      const cloudSuccess = await switchToBroker('cloud');
+                      if (cloudSuccess) {
+                        console.log(
+                          '✅ Successfully switched to cloud broker after connection loss'
+                        );
+                      } else {
+                        console.warn(
+                          '⚠️ Cloud broker fallback failed, will retry local connection'
+                        );
+                        // Continue with normal reconnection attempts
+                        if (reconnectAttempts < maxReconnectAttempts) {
+                          attemptReconnect();
+                        } else {
+                          setStatus('error');
+                          emitter.emit(
+                            'error',
+                            new Error('Max reconnection attempts reached')
+                          );
+                        }
+                      }
+                    } catch (switchError) {
+                      console.error(
+                        '❌ Error during cloud fallback after connection loss:',
+                        switchError
                       );
                       // Continue with normal reconnection attempts
                       if (reconnectAttempts < maxReconnectAttempts) {
                         attemptReconnect();
-                      } else {
-                        setStatus('error');
-                        emitter.emit(
-                          'error',
-                          new Error('Max reconnection attempts reached')
-                        );
                       }
                     }
-                  } catch (switchError) {
-                    console.error(
-                      '❌ Error during cloud fallback after connection loss:',
-                      switchError
+                  }, 2000); // Wait 2 seconds before attempting fallback
+                  return; // Don't immediately start reconnection, wait for fallback attempt
+                } else {
+                  console.log(
+                    '🔄 Local broker connection lost on external network, no automatic cloud fallback (user preference)'
+                  );
+                  // Don't attempt automatic fallback on external networks
+                  // Continue with normal reconnection attempts
+                  if (reconnectAttempts < maxReconnectAttempts) {
+                    attemptReconnect();
+                  } else {
+                    setStatus('error');
+                    emitter.emit(
+                      'error',
+                      new Error('Max reconnection attempts reached')
                     );
-                    // Continue with normal reconnection attempts
-                    if (reconnectAttempts < maxReconnectAttempts) {
-                      attemptReconnect();
-                    }
                   }
-                }, 2000); // Wait 2 seconds before attempting fallback
-                return; // Don't immediately start reconnection, wait for fallback attempt
+                }
               }
 
               // Only attempt reconnection if we haven't exceeded max attempts
@@ -949,19 +1152,51 @@ function createService(
 
         setStatus('error');
         return false;
+      } finally {
+        isConnecting = false;
       }
     },
     disconnect: () => {
+      console.log('🔌 Disconnecting MQTT client...');
+
       if (client) {
-        client.disconnect();
-        client = null;
+        try {
+          // Unsubscribe from all topics before disconnecting
+          if (subscribedTopics.size > 0) {
+            console.log(
+              `📡 Unsubscribing from ${subscribedTopics.size} topics before disconnect`
+            );
+            subscribedTopics.forEach((topic) => {
+              try {
+                client!.unsubscribe(topic);
+              } catch (error) {
+                console.warn(`Failed to unsubscribe from ${topic}:`, error);
+              }
+            });
+          }
+
+          client.disconnect();
+          client = null;
+
+          // Clear subscription tracking
+          subscribedTopics.clear();
+          subscriptionAttempts.clear();
+
+          console.log('✅ MQTT client disconnected and cleaned up');
+        } catch (error) {
+          console.error('❌ Error during MQTT disconnect:', error);
+          // Force cleanup even if disconnect fails
+          client = null;
+          subscribedTopics.clear();
+          subscriptionAttempts.clear();
+        }
       }
+
       setStatus('disconnected');
       reconnectAttempts = 0;
     },
     publish: (topic, message, qos: Paho.Qos = 1, retained = false) => {
       if (!isConnected()) {
-        // eslint-disable-next-line no-console
         console.warn('MQTT not connected. Cannot publish message.');
         return false;
       }
@@ -977,7 +1212,6 @@ function createService(
         console.log(`✅ MQTT message sent successfully`);
         return true;
       } catch (error) {
-        // eslint-disable-next-line no-console
         console.error('❌ Error publishing MQTT message:', error);
         emitter.emit('error', error);
         return false;
@@ -988,7 +1222,6 @@ function createService(
         const jsonString = JSON.stringify(data);
         return api.publish(topic, jsonString, qos, retained);
       } catch (error) {
-        // eslint-disable-next-line no-console
         console.error('Error publishing JSON data:', error);
         emitter.emit('error', error);
         return false;
@@ -996,34 +1229,54 @@ function createService(
     },
     subscribe: (topic, qos: Paho.Qos = 1) => {
       if (!isConnected()) {
-        // eslint-disable-next-line no-console
         console.warn('MQTT not connected. Cannot subscribe to topic.');
         return false;
       }
+
+      // Prevent duplicate subscriptions
+      if (subscribedTopics.has(topic)) {
+        console.log(`Already subscribed to topic: ${topic}`);
+        return true;
+      }
+
+      // Track subscription attempts to prevent infinite loops
+      const attempts = subscriptionAttempts.get(topic) || 0;
+      if (attempts >= 3) {
+        console.error(`Max subscription attempts reached for topic: ${topic}`);
+        return false;
+      }
+
       try {
+        console.log(
+          `📡 Subscribing to topic: ${topic} (attempt ${attempts + 1})`
+        );
         client?.subscribe(topic, { qos });
         subscribedTopics.add(topic);
+        subscriptionAttempts.delete(topic); // Clear attempts on success
         return true;
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Error subscribing to MQTT topic:', error);
+        console.error(`Error subscribing to MQTT topic ${topic}:`, error);
+        subscriptionAttempts.set(topic, attempts + 1);
         emitter.emit('error', error);
         return false;
       }
     },
     unsubscribe: (topic) => {
       if (!isConnected()) {
-        // eslint-disable-next-line no-console
         console.warn('MQTT not connected. Cannot unsubscribe from topic.');
         return false;
       }
+
+      // Remove from tracking even if unsubscribe fails
+      subscribedTopics.delete(topic);
+      subscriptionAttempts.delete(topic);
+
       try {
         client?.unsubscribe(topic);
-        subscribedTopics.delete(topic);
+        console.log(`📡 Unsubscribed from topic: ${topic}`);
         return true;
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Error unsubscribing from MQTT topic:', error);
+        console.error(`Error unsubscribing from MQTT topic ${topic}:`, error);
         emitter.emit('error', error);
         return false;
       }
@@ -1038,7 +1291,7 @@ function createService(
           try {
             const data = JSON.parse(message);
             callback(data);
-          } catch (_e) {
+          } catch {
             callback(message);
           }
         }

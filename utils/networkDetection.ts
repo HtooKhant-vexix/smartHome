@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
 
 export interface NetworkInfo {
   isConnected: boolean;
@@ -200,7 +201,13 @@ export class NetworkDetector {
     const isSameSubnet = this.isSameSubnet(ipAddress, brokerIP);
 
     // Check if SSID indicates local network (you can customize this)
-    const localSSIDs = ['YourHomeWiFi', 'HomeNetwork', 'SmartHome']; // Add your actual SSIDs
+    const localSSIDs = [
+      'POS_SERVER_OLD',
+      'pos_server_old',
+      'POS_SERVER',
+      'home',
+      'local',
+    ]; // Add your actual SSIDs
     const isLocalSSID = Boolean(
       ssid &&
         localSSIDs.some((localSSID) =>
@@ -208,7 +215,35 @@ export class NetworkDetector {
         )
     );
 
-    return isSameSubnet || isLocalSSID;
+    // Additional check for common local network patterns
+    const isLikelyLocalNetwork = Boolean(
+      ssid &&
+        (ssid.toLowerCase().includes('pos') ||
+          ssid.toLowerCase().includes('server') ||
+          ssid.toLowerCase().includes('office') ||
+          ssid.toLowerCase().includes('work') ||
+          ipAddress?.startsWith('192.168.') ||
+          ipAddress?.startsWith('10.') ||
+          ipAddress?.startsWith('172.'))
+    );
+
+    // iOS-specific network detection
+    const isIOSLocalNetwork =
+      Platform.OS === 'ios' &&
+      Boolean(
+        ipAddress?.startsWith('192.168.') ||
+          ipAddress?.startsWith('10.') ||
+          ipAddress?.startsWith('172.') ||
+          (ssid && ssid.toLowerCase().includes('pos'))
+      );
+
+    console.log(
+      `🔍 Network detection: SSID="${ssid}", IP="${ipAddress}", isSameSubnet=${isSameSubnet}, isLocalSSID=${isLocalSSID}, isLikelyLocal=${isLikelyLocalNetwork}, isIOSLocal=${isIOSLocalNetwork}`
+    );
+
+    return (
+      isSameSubnet || isLocalSSID || isLikelyLocalNetwork || isIOSLocalNetwork
+    );
   }
 
   private isSameSubnet(ip1: string, ip2: string): boolean {

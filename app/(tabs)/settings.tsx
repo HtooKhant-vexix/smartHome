@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
-  Animated,
   Dimensions,
   TextInput,
   Modal,
@@ -29,22 +28,13 @@ import {
   Globe,
   Palette,
   Bluetooth,
-  BluetoothConnected,
   RefreshCw,
   X,
-  Signal,
-  WifiOff,
-  PowerOff,
-  Radio,
   Send,
-  FileJson,
-  FileText,
   Wifi as WifiIcon,
   Router,
-  Wifi as WifiIcon2,
   Network,
   Server,
-  Plus,
 } from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
@@ -57,14 +47,12 @@ import {
   MqttConnectionStatus,
   MqttBridgeStatus,
   BrokerType,
-  BrokerConfigurations,
 } from '../../services/mqttService';
 import {
   mqttBridgeTester,
   BridgeTestResult,
 } from '../../services/mqttBridgeTest';
 import { useSmartHomeStore } from '../../store/useSmartHomeStore';
-import { NetworkIndicator } from '../../components/NetworkIndicator';
 
 const { width } = Dimensions.get('window');
 
@@ -158,7 +146,6 @@ function MQTTBridgeSection() {
   const [isTestingBridge, setIsTestingBridge] = useState(false);
 
   const currentBroker = getCurrentMqttBroker();
-  const brokerConfigs = getMqttBrokerConfigs();
 
   const testBroker = async (brokerType: BrokerType) => {
     if (brokerType === 'local') {
@@ -481,17 +468,17 @@ export default function SettingsScreen() {
   const [isSending, setIsSending] = useState(false);
   const [isBluetoothReady, setIsBluetoothReady] = useState(false);
   const [wifiNetworks, setWifiNetworks] = useState<
-    Array<{ ssid: string; rssi: number }>
+    { ssid: string; rssi: number }[]
   >([]);
   const [isWifiScanning, setIsWifiScanning] = useState(false);
   const [showWifiScan, setShowWifiScan] = useState(false);
   const [networkDevices, setNetworkDevices] = useState<
-    Array<{
+    {
       ip: string;
       mac: string;
       hostname: string;
       vendor: string;
-    }>
+    }[]
   >([]);
   const [isScanningNetwork, setIsScanningNetwork] = useState(false);
   const [tcpStatus, setTcpStatus] = useState<
@@ -1340,9 +1327,9 @@ export default function SettingsScreen() {
         {/* </SettingSection> */}
 
         {/* MQTT Bridge Section */}
-        <SettingSection title="MQTT Bridge">
+        {/* <SettingSection title="MQTT Bridge">
           <MQTTBridgeSection />
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Device Control Section */}
         {/* <SettingSection title="Device Control">
@@ -1624,7 +1611,7 @@ export default function SettingsScreen() {
         </SettingSection> */}
 
         {/* Centralized MQTT Configuration Section */}
-        <SettingSection title="MQTT Configuration">
+        {/* <SettingSection title="MQTT Configuration">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1740,7 +1727,7 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* MQTT Connection Test Section */}
         {/* <SettingSection title="MQTT Connection Test">
