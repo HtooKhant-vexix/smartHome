@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,30 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Settings, Plus, ChevronRight } from 'lucide-react-native';
 import { DeviceItem } from '../../components/DeviceItem';
 import { deviceIcons, DeviceType } from '../../constants/defaultData';
-import { useRooms } from '../context/RoomContext';
-import AddDeviceModal from '../components/AddDeviceModal';
+import AddDeviceModal from '../_components/AddDeviceModal';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
+
+const DEVICE_KEYS = [
+  'light_switch',
+  'AC_switch',
+  'socket_switch',
+  'rgb_light',
+] as const;
+
+const AC_BASE_TOPIC = 'room1/ac';
 
 export default function RoomDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const roomId = id as string;
-  const { rooms } = useRooms();
+
+  // Use Zustand store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const toggleDeviceWithMqtt = useSmartHomeStore(
+    (state) => state.toggleDeviceWithMqtt
+  );
   const room = rooms.find((r) => r.id === roomId);
+
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
 
   if (!room) {
@@ -37,9 +52,12 @@ export default function RoomDetailScreen() {
   const activeDevices = allDevices.filter((device) => device.isActive).length;
   const totalDevices = allDevices.length;
 
-  const toggleDevice = (deviceType: DeviceType, deviceId: string) => {
-    // In a real app, this would update the state and sync with backend
-    console.log('Toggle device:', deviceType, deviceId);
+  const toggleDevice = (
+    deviceType: DeviceType,
+    deviceId: string,
+    deviceIndex: number
+  ) => {
+    toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
   };
 
   const handleDevicePress = (deviceType: DeviceType, deviceId: string) => {
@@ -113,7 +131,7 @@ export default function RoomDetailScreen() {
                 <ChevronRight size={20} color="#94a3b8" />
               </TouchableOpacity>
 
-              {devices.map((device) => (
+              {devices.map((device, idx) => (
                 <TouchableOpacity
                   key={device.id}
                   onPress={() =>
@@ -125,7 +143,7 @@ export default function RoomDetailScreen() {
                     icon={deviceIcons[deviceType as DeviceType]}
                     isActive={device.isActive}
                     onToggle={() =>
-                      toggleDevice(deviceType as DeviceType, device.id)
+                      toggleDevice(deviceType as DeviceType, device.id, idx)
                     }
                   />
                 </TouchableOpacity>

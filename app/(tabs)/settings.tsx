@@ -49,9 +49,22 @@ import {
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
 import { CustomAlert } from '../../components/CustomAlert';
-import Paho from 'paho-mqtt';
+// Paho no longer needed here; use centralized mqttService
 import { useRouter } from 'expo-router';
-import TCPSocket from 'react-native-tcp-socket';
+import {
+  mqttService,
+  MqttConfig,
+  MqttConnectionStatus,
+  MqttBridgeStatus,
+  BrokerType,
+  BrokerConfigurations,
+} from '../../services/mqttService';
+import {
+  mqttBridgeTester,
+  BridgeTestResult,
+} from '../../services/mqttBridgeTest';
+import { useSmartHomeStore } from '../../store/useSmartHomeStore';
+import { NetworkIndicator } from '../../components/NetworkIndicator';
 
 const { width } = Dimensions.get('window');
 
@@ -109,14 +122,323 @@ function SettingSection({ title, children }: SettingSectionProps) {
   );
 }
 
-interface TCPConnection {
+// MQTT Connection interface for UI
+interface MqttConnectionUI {
   id: string;
   host: string;
-  port: string;
-  status: 'disconnected' | 'connecting' | 'connected';
+  port: number;
+  clientId: string;
+  username?: string;
+  password?: string;
+  status: MqttConnectionStatus;
   messages: string[];
   topic: string;
   message: string;
+}
+
+// MQTT Bridge Section Component
+function MQTTBridgeSection() {
+  const {
+    mqtt,
+    switchMqttBroker,
+    getCurrentMqttBroker,
+    getMqttBrokerConfigs,
+    testMqttBrokerConnection,
+  } = useSmartHomeStore();
+
+  const [isTestingLocal, setIsTestingLocal] = useState(false);
+  const [isTestingCloud, setIsTestingCloud] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [testResults, setTestResults] = useState<{
+    local: boolean | null;
+    cloud: boolean | null;
+  }>({ local: null, cloud: null });
+  const [bridgeTestResults, setBridgeTestResults] =
+    useState<BridgeTestResult | null>(null);
+  const [isTestingBridge, setIsTestingBridge] = useState(false);
+
+  const currentBroker = getCurrentMqttBroker();
+  const brokerConfigs = getMqttBrokerConfigs();
+
+  const testBroker = async (brokerType: BrokerType) => {
+    if (brokerType === 'local') {
+      setIsTestingLocal(true);
+    } else {
+      setIsTestingCloud(true);
+    }
+
+    try {
+      const result = await testMqttBrokerConnection(brokerType);
+      setTestResults((prev) => ({ ...prev, [brokerType]: result }));
+    } catch (error) {
+      console.error(`Error testing ${brokerType} broker:`, error);
+      setTestResults((prev) => ({ ...prev, [brokerType]: false }));
+    } finally {
+      if (brokerType === 'local') {
+        setIsTestingLocal(false);
+      } else {
+        setIsTestingCloud(false);
+      }
+    }
+  };
+
+  const handleSwitchBroker = async (brokerType: BrokerType) => {
+    setIsSwitching(true);
+    try {
+      await switchMqttBroker(brokerType);
+      setTestResults({ local: null, cloud: null }); // Reset test results
+    } catch (error) {
+      console.error('Error switching broker:', error);
+      Alert.alert('Error', 'Failed to switch MQTT broker');
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const testBridge = async () => {
+    setIsTestingBridge(true);
+    try {
+      const results = await mqttBridgeTester.runFullBridgeTest();
+      setBridgeTestResults(results);
+    } catch (error) {
+      console.error('Bridge test error:', error);
+      Alert.alert('Error', 'Failed to test MQTT bridge');
+    } finally {
+      setIsTestingBridge(false);
+    }
+  };
+
+  const getStatusColor = (status: MqttBridgeStatus) => {
+    switch (status) {
+      case 'connected':
+        return '#22c55e';
+      case 'connecting':
+      case 'switching':
+        return '#eab308';
+      default:
+        return '#ef4444';
+    }
+  };
+
+  const getStatusText = (status: MqttBridgeStatus) => {
+    switch (status) {
+      case 'connected':
+        return 'Connected';
+      case 'connecting':
+        return 'Connecting...';
+      case 'switching':
+        return 'Switching...';
+      case 'disconnected':
+        return 'Disconnected';
+      case 'error':
+        return 'Error';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  return (
+    <View>
+      {/* Current Status */}
+      <View style={styles.mqttCard}>
+        <View style={styles.mqttHeader}>
+          <View style={styles.mqttStatus}>
+            <View
+              style={[
+                styles.statusIndicator,
+                { backgroundColor: getStatusColor(mqtt.status) },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              {getStatusText(mqtt.status)} ({currentBroker.toUpperCase()})
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={[
+                styles.headerButton,
+                isSwitching && styles.scanningButton,
+              ]}
+              onPress={() =>
+                handleSwitchBroker(
+                  currentBroker === 'local' ? 'cloud' : 'local'
+                )
+              }
+              disabled={isSwitching}
+            >
+              {isSwitching ? (
+                <ActivityIndicator color="#2563eb" />
+              ) : (
+                <RefreshCw size={20} color="#2563eb" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+        {/* Broker Information */}
+        {/* <View style={styles.brokerInfo}>
+          <View style={styles.brokerRow}>
+            <Text style={styles.brokerLabel}>Local Broker:</Text>
+            <Text style={styles.brokerValue}>
+              {brokerConfigs.local.host}:{brokerConfigs.local.port}
+            </Text>
+          </View>
+          <View style={styles.brokerRow}>
+            <Text style={styles.brokerLabel}>Cloud Broker:</Text>
+            <Text style={styles.brokerValue}>
+              {brokerConfigs.cloud.host}:{brokerConfigs.cloud.port}
+            </Text>
+          </View>
+        </View> */}
+        {/* Network Information */}
+        {/* <View style={styles.networkSection}>
+          <Text style={styles.sectionTitle}>Network Status</Text>
+          <NetworkIndicator style={styles.networkIndicator} />
+        </View> */}{' '}
+        <View style={styles.testSection}>
+          <Text style={styles.testTitle}>Broker Testing</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              isTestingLocal && styles.testButtonActive,
+              testResults.local === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('local')}
+            disabled={isTestingLocal}
+          >
+            {isTestingLocal ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <WifiIcon size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Local (
+                  {testResults.local === true
+                    ? '✓'
+                    : testResults.local === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.cloudTestButton,
+              isTestingCloud && styles.testButtonActive,
+              testResults.cloud === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('cloud')}
+            disabled={isTestingCloud}
+          >
+            {isTestingCloud ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Server size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Cloud (
+                  {testResults.cloud === true
+                    ? '✓'
+                    : testResults.cloud === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.bridgeTestButton,
+              isTestingBridge && styles.testButtonActive,
+            ]}
+            onPress={testBridge}
+            disabled={isTestingBridge}
+          >
+            {isTestingBridge ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Router size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>Test Bridge</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Broker Testing */}
+
+      {/* Bridge Test Results */}
+      {bridgeTestResults && (
+        <View style={styles.bridgeResults}>
+          <Text style={styles.bridgeResultsTitle}>Bridge Test Results:</Text>
+          <View style={styles.bridgeResultRow}>
+            <Text style={styles.bridgeResultLabel}>Cloud → Local:</Text>
+            <Text
+              style={[
+                styles.bridgeResultValue,
+                {
+                  color: bridgeTestResults?.bridgeTest?.cloudToLocal
+                    ? '#22c55e'
+                    : '#ef4444',
+                },
+              ]}
+            >
+              {bridgeTestResults?.bridgeTest?.cloudToLocal
+                ? '✅ Working'
+                : '❌ Failed'}
+            </Text>
+          </View>
+          <View style={styles.bridgeResultRow}>
+            <Text style={styles.bridgeResultLabel}>Local → Cloud:</Text>
+            <Text
+              style={[
+                styles.bridgeResultValue,
+                {
+                  color: bridgeTestResults?.bridgeTest?.localToCloud
+                    ? '#22c55e'
+                    : '#ef4444',
+                },
+              ]}
+            >
+              {bridgeTestResults?.bridgeTest?.localToCloud
+                ? '✅ Working'
+                : '❌ Failed'}
+            </Text>
+          </View>
+          {bridgeTestResults?.bridgeTest?.error && (
+            <View style={styles.bridgeErrors}>
+              <Text style={styles.bridgeErrorTitle}>Bridge Error:</Text>
+              <Text style={styles.bridgeErrorText}>
+                • {bridgeTestResults.bridgeTest.error}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Connection Info */}
+      {/* <View style={styles.infoSection}>
+        <Text style={styles.infoTitle}>Connection Information</Text>
+        <Text style={styles.infoText}>
+          • Local: {brokerConfigs.local.host}:{brokerConfigs.local.port}
+        </Text>
+        <Text style={styles.infoText}>
+          • Cloud: {brokerConfigs.cloud.host}:{brokerConfigs.cloud.port}
+        </Text>
+        <Text style={styles.infoText}>
+          • Auto-switching: Enabled (connects to best available broker)
+        </Text>
+      </View> */}
+    </View>
+  );
 }
 
 export default function SettingsScreen() {
@@ -146,7 +468,6 @@ export default function SettingsScreen() {
   const [mqttMessages, setMqttMessages] = useState<string[]>([]);
   const [mqttTopic, setMqttTopic] = useState('detpos/topic');
   const [mqttMessage, setMqttMessage] = useState('');
-  const mqttClient = useRef<any>(null);
   const [mqttStatus, setMqttStatus] = useState<
     'disconnected' | 'connecting' | 'connected'
   >('disconnected');
@@ -177,7 +498,7 @@ export default function SettingsScreen() {
     'disconnected' | 'connecting' | 'connected'
   >('disconnected');
   const [tcpConnected, setTcpConnected] = useState(false);
-  const [tcpHost, setTcpHost] = useState('192.168.1.100');
+  const [tcpHost, setTcpHost] = useState('127.0.0.1');
   const [tcpPort, setTcpPort] = useState('1883');
   const [tcpTopic, setTcpTopic] = useState('office/ac/control');
   const [tcpMessage, setTcpMessage] = useState('');
@@ -195,11 +516,15 @@ export default function SettingsScreen() {
     string | null
   >(null);
 
-  const [tcpConnections, setTcpConnections] = useState<TCPConnection[]>([]);
-  const [selectedTcpConnection, setSelectedTcpConnection] = useState<
+  const [mqttConnections, setMqttConnections] = useState<MqttConnectionUI[]>(
+    []
+  );
+  const [selectedMqttConnection, setSelectedMqttConnection] = useState<
     string | null
   >(null);
-  const tcpClients = useRef<{ [key: string]: any }>({});
+  const [mqttConfig, setMqttConfig] = useState<MqttConfig>(
+    mqttService.getConfig()
+  );
 
   // Device Control Functions
   const toggleDeviceState = async (deviceId: string) => {
@@ -217,19 +542,17 @@ export default function SettingsScreen() {
         type: 'control',
       };
 
-      // Send via MQTT if connected
-      if (mqttClient.current && mqttConnected) {
+      // Send via centralized MQTT service if connected
+      if (mqttService.isConnected()) {
         const topic = deviceTopics[deviceId] || `devices/${deviceId}/control`;
-        const message = new Paho.Message(JSON.stringify(controlMessage));
-        message.destinationName = topic;
-        message.qos = 1; // At least once delivery
-        message.retained = false;
-        mqttClient.current.send(message);
+        const success = mqttService.publishJson(topic, controlMessage);
 
-        setMqttMessages((prev) => [
-          ...prev,
-          `[${topic}] Sent: ${JSON.stringify(controlMessage)}`,
-        ]);
+        if (success) {
+          setMqttMessages((prev) => [
+            ...prev,
+            `[${topic}] Sent: ${JSON.stringify(controlMessage)}`,
+          ]);
+        }
       }
 
       showAlert(
@@ -281,13 +604,10 @@ export default function SettingsScreen() {
       }
     };
 
-    initializeBluetooth();
+    // initializeBluetooth();
 
     return () => {
       bluetoothService.stopScan();
-      if (mqttClient.current) {
-        mqttClient.current.disconnect();
-      }
     };
   }, []);
 
@@ -334,7 +654,7 @@ export default function SettingsScreen() {
       }
 
       // Refresh the device list
-      await startScan();
+      // await startScan();
       // Update connected devices list
       setConnectedDevices(bluetoothService.getConnectedDevices());
     } catch (error) {
@@ -410,94 +730,56 @@ export default function SettingsScreen() {
     }
   };
 
-  const connectMQTT = () => {
+  const connectMQTT = async () => {
     try {
       setMqttStatus('connecting');
-      mqttClient.current = new Paho.Client(
-        '192.168.1.124',
-        Number(9001),
-        `client-${Math.random().toString(16).substr(2, 8)}`
-      );
-
-      const options = {
-        onSuccess: () => {
-          setMqttStatus('connected');
-          setMqttConnected(true);
-          mqttClient.current.subscribe('detpos/#');
-          showAlert('Success', 'MQTT Connected successfully', 'success');
-        },
-        onFailure: (err: any) => {
-          setMqttStatus('disconnected');
-          setMqttConnected(false);
-          showAlert('Error', 'Failed to connect to MQTT broker', 'error');
-          console.error('MQTT Connection failed:', err);
-        },
-        userName: 'detpos',
-        password: 'asdffdsa',
-        useSSL: false,
-      };
-
-      mqttClient.current.connect(options);
-
-      // Set up message listener
-      mqttClient.current.onMessageArrived = (message: any) => {
+      await mqttService.connect();
+      // default test subscription
+      mqttService.subscribe('detpos/#');
+      setMqttStatus('connected');
+      setMqttConnected(true);
+      showAlert('Success', 'MQTT Connected successfully', 'success');
+      // Hook one-time message logger for settings page
+      const handler = (topic: string, payload: string) => {
         try {
-          const payload = JSON.parse(message.payloadString);
+          const json = JSON.parse(payload);
           setMqttMessages((prev) => [
             ...prev,
-            `[${message.destinationName}] Received: ${JSON.stringify(payload)}`,
+            `[${topic}] Received: ${JSON.stringify(json)}`,
           ]);
-
-          // Handle device state updates
-          if (payload.type === 'state_update' && payload.deviceId) {
-            setDeviceStates((prev) => ({
-              ...prev,
-              [payload.deviceId]: payload.state === 'ON',
-            }));
-          }
-        } catch (error) {
+        } catch {
           setMqttMessages((prev) => [
             ...prev,
-            `[${message.destinationName}] Received: ${message.payloadString}`,
+            `[${topic}] Received: ${payload}`,
           ]);
         }
       };
-
-      mqttClient.current.onConnectionLost = onConnectionLost;
-    } catch (error) {
+      // Note: rely on centralized listeners; duplicate registrations are fine in this scope
+      mqttService.on('message', handler as any);
+    } catch (err) {
       setMqttStatus('disconnected');
-      showAlert('Error', 'Failed to initialize MQTT client', 'error');
-      console.error('MQTT initialization error:', error);
+      setMqttConnected(false);
+      showAlert('Error', 'Failed to connect to MQTT broker', 'error');
+      console.error('MQTT Connection failed:', err);
     }
   };
 
   const disconnectMQTT = () => {
-    if (mqttClient.current) {
-      mqttClient.current.disconnect();
-      setMqttStatus('disconnected');
-      setMqttConnected(false);
-      showAlert('Success', 'MQTT Disconnected successfully', 'success');
-    }
+    mqttService.disconnect();
+    setMqttStatus('disconnected');
+    setMqttConnected(false);
+    showAlert('Success', 'MQTT Disconnected successfully', 'success');
   };
 
-  const onConnectionLost = (responseObject: any) => {
-    if (responseObject.errorCode !== 0) {
-      setMqttStatus('disconnected');
-      setMqttConnected(false);
-      showAlert('Error', 'MQTT Connection lost', 'error');
-    }
-  };
+  // Connection lost handled by centralized mqttService
 
   const publishMessage = () => {
-    if (!mqttClient.current || !mqttConnected) {
+    if (!mqttConnected) {
       showAlert('Error', 'MQTT not connected', 'error');
       return;
     }
 
     try {
-      const message = new Paho.Message(mqttMessage);
-      message.destinationName = mqttTopic;
-
       // Store current message and topic for logging
       const currentMessage = mqttMessage;
       const currentTopic = mqttTopic;
@@ -509,8 +791,8 @@ export default function SettingsScreen() {
       ]);
       setMqttMessage(''); // Clear the message input immediately
 
-      // Send message in the background
-      mqttClient.current.send(message);
+      // Send via centralized service
+      mqttService.publish(currentTopic, currentMessage);
 
       // Add success message after sending
       setMqttMessages((prev) => [
@@ -667,241 +949,166 @@ export default function SettingsScreen() {
     }
   };
 
-  const addTcpConnection = () => {
-    const newConnection: TCPConnection = {
-      id: `tcp_${Date.now()}`,
-      host: '192.168.1.100',
-      port: '1883',
+  const addMqttConnection = () => {
+    const newConnection: MqttConnectionUI = {
+      id: `mqtt_${Date.now()}`,
+      host: mqttConfig.host,
+      port: mqttConfig.port,
+      clientId: mqttConfig.clientId,
+      username: mqttConfig.username,
+      password: mqttConfig.password,
       status: 'disconnected',
       messages: [],
-      topic: 'tcp/test',
+      topic: 'test/topic',
       message: '',
     };
-    setTcpConnections((prev) => [...prev, newConnection]);
-    setSelectedTcpConnection(newConnection.id);
+    setMqttConnections((prev) => [...prev, newConnection]);
+    setSelectedMqttConnection(newConnection.id);
   };
 
-  const removeTcpConnection = (id: string) => {
-    if (tcpClients.current[id]) {
-      tcpClients.current[id].destroy();
-      delete tcpClients.current[id];
-    }
-    setTcpConnections((prev) => prev.filter((conn) => conn.id !== id));
-    if (selectedTcpConnection === id) {
-      setSelectedTcpConnection(null);
+  const removeMqttConnection = (id: string) => {
+    setMqttConnections((prev) => prev.filter((conn) => conn.id !== id));
+    if (selectedMqttConnection === id) {
+      setSelectedMqttConnection(null);
     }
   };
 
-  const updateTcpConnection = (id: string, updates: Partial<TCPConnection>) => {
-    setTcpConnections((prev) =>
-      prev.map((conn) => (conn.id === id ? { ...conn, ...updates } : conn))
+  const updateMqttConnection = (
+    id: string,
+    updates:
+      | Partial<MqttConnectionUI>
+      | ((conn: MqttConnectionUI) => Partial<MqttConnectionUI>)
+  ) => {
+    setMqttConnections((prev) =>
+      prev.map((conn) =>
+        conn.id === id
+          ? {
+              ...conn,
+              ...(typeof updates === 'function' ? updates(conn) : updates),
+            }
+          : conn
+      )
     );
   };
 
-  const connectTCP = async (id: string) => {
-    const connection = tcpConnections.find((conn) => conn.id === id);
+  const connectMqtt = async (id: string) => {
+    const connection = mqttConnections.find((conn) => conn.id === id);
     if (!connection) return;
 
     try {
-      updateTcpConnection(id, { status: 'connecting' });
+      updateMqttConnection(id, { status: 'connecting' });
 
-      // Validate IP address format
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (!ipRegex.test(connection.host)) {
-        throw new Error('Invalid IP address format');
-      }
-
-      // Validate port number
-      const port = parseInt(connection.port);
-      if (isNaN(port) || port < 1 || port > 65535) {
-        throw new Error('Invalid port number');
-      }
-
-      // Create TCP client
-      const options = {
-        port: port,
+      // Update centralized MQTT service configuration
+      mqttService.updateConfig({
         host: connection.host,
-        timeout: 5000,
-      };
-
-      const socket = TCPSocket.createConnection(options, () => {
-        updateTcpConnection(id, { status: 'connected' });
-        updateTcpConnection(id, {
-          messages: [
-            ...connection.messages,
-            `Connected to ${connection.host}:${connection.port}`,
-          ],
-        });
-        showAlert('Success', 'TCP Connected successfully', 'success');
+        port: connection.port,
+        clientId: connection.clientId,
+        username: connection.username,
+        password: connection.password,
       });
 
-      tcpClients.current[id] = socket;
+      // Connect using centralized service
+      await mqttService.connect();
 
-      // Set up message listener
-      socket.on('data', (data: string | Buffer) => {
-        try {
-          const message = data.toString().trim();
-          const payload = JSON.parse(message);
+      // Subscribe to the topic
+      mqttService.subscribe(connection.topic);
 
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `Received: ${JSON.stringify(payload)}`,
-            ],
-          });
+      // Update connection status
+      const bridgeStatus = mqttService.getStatus();
+      const connectionStatus: MqttConnectionStatus =
+        bridgeStatus === 'connected'
+          ? 'connected'
+          : bridgeStatus === 'connecting'
+          ? 'connecting'
+          : bridgeStatus === 'error'
+          ? 'error'
+          : 'disconnected';
 
-          // Handle device state updates
-          if (payload.type === 'state_update' && payload.deviceId) {
-            setDeviceStates((prev) => ({
-              ...prev,
-              [payload.deviceId]: payload.state === 'ON',
-            }));
-          }
-        } catch (error) {
-          updateTcpConnection(id, {
-            messages: [...connection.messages, `Received: ${data.toString()}`],
-          });
-        }
+      updateMqttConnection(id, {
+        status: connectionStatus,
+        messages: [
+          ...connection.messages,
+          `Connected to ${connection.host}:${connection.port}`,
+        ],
       });
 
-      // Handle connection events
-      socket.on('error', (error: Error) => {
-        updateTcpConnection(id, { status: 'disconnected' });
-        updateTcpConnection(id, {
-          messages: [
-            ...connection.messages,
-            `Connection error: ${error.message}`,
-          ],
-        });
-        showAlert('Error', `Failed to connect: ${error.message}`, 'error');
-        if (tcpClients.current[id]) {
-          tcpClients.current[id].destroy();
-          delete tcpClients.current[id];
-        }
-      });
-
-      socket.on('close', () => {
-        updateTcpConnection(id, { status: 'disconnected' });
-        updateTcpConnection(id, {
-          messages: [...connection.messages, 'Connection closed'],
-        });
-      });
+      showAlert('Success', 'MQTT Connected successfully', 'success');
     } catch (error) {
-      updateTcpConnection(id, { status: 'disconnected' });
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      updateTcpConnection(id, {
+      updateMqttConnection(id, {
+        status: 'error',
         messages: [...connection.messages, `Connection error: ${errorMessage}`],
       });
       showAlert('Error', `Failed to connect: ${errorMessage}`, 'error');
-      if (tcpClients.current[id]) {
-        tcpClients.current[id].destroy();
-        delete tcpClients.current[id];
-      }
     }
   };
 
-  const disconnectTCP = (id: string) => {
+  const disconnectMqtt = (id: string) => {
     try {
-      if (tcpClients.current[id]) {
-        tcpClients.current[id].end();
-        tcpClients.current[id].destroy();
-        delete tcpClients.current[id];
-      }
-      updateTcpConnection(id, { status: 'disconnected' });
-      const connection = tcpConnections.find((conn) => conn.id === id);
+      // Disconnect centralized MQTT service
+      mqttService.disconnect();
+
+      updateMqttConnection(id, { status: 'disconnected' });
+      const connection = mqttConnections.find((conn) => conn.id === id);
       if (connection) {
-        updateTcpConnection(id, {
+        updateMqttConnection(id, {
           messages: [...connection.messages, 'Disconnected from server'],
         });
       }
-      showAlert('Success', 'TCP Disconnected successfully', 'success');
+      showAlert('Success', 'MQTT Disconnected successfully', 'success');
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      showAlert('Error', `Failed to disconnect: ${errorMessage}`, 'error');
-      console.error('TCP Disconnection error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      showAlert('Error', `Failed to disconnect: ${errorMsg}`, 'error');
+      console.error('MQTT Disconnection error:', error);
     }
   };
 
-  const sendTCPMessage = (id: string) => {
-    const connection = tcpConnections.find((conn) => conn.id === id);
+  const sendMqttMessage = (id: string) => {
+    const connection = mqttConnections.find((conn) => conn.id === id);
     if (!connection) {
       showAlert('Error', 'Connection not found', 'error');
       return;
     }
-
-    if (!tcpClients.current[id]) {
-      showAlert('Error', 'TCP client not initialized', 'error');
+    if (!mqttService.isConnected()) {
+      showAlert('Error', 'MQTT not connected', 'error');
       return;
     }
-
-    if (connection.status !== 'connected') {
-      showAlert('Error', 'TCP not connected', 'error');
-      return;
-    }
-
     if (!connection.message.trim() || !connection.topic.trim()) {
       showAlert('Error', 'Message and topic cannot be empty', 'error');
       return;
     }
-
     try {
-      // Create message payload with only topic and message
-      const payload = {
+      // Send using centralized MQTT service
+      console.log('[MQTT SEND]', {
         topic: connection.topic,
         message: connection.message,
-      };
-
-      // Convert payload to string and add newline
-      const messageString = JSON.stringify(payload) + '\n';
-
-      // Store the current message for logging
-      const currentMessage = connection.message;
-      const currentTopic = connection.topic;
-
-      // Immediately update UI to show message as sent
-      updateTcpConnection(id, {
-        messages: [
-          ...connection.messages,
-          `[${currentTopic}] Sending: ${currentMessage}`,
-        ],
-        message: '', // Clear the message input immediately
       });
 
-      // Send message in the background
-      tcpClients.current[id].write(messageString, (error?: Error) => {
-        if (error) {
-          console.error('Error sending TCP message:', error);
-          // Update UI to show error if it occurs
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `[${currentTopic}] Error: ${error.message}`,
-            ],
-          });
-          showAlert('Error', 'Failed to send message', 'error');
-        } else {
-          // Add success message after sending
-          updateTcpConnection(id, {
-            messages: [
-              ...connection.messages,
-              `[${currentTopic}] Sending: ${currentMessage}`,
-              `[${currentTopic}] Sent successfully`,
-            ],
-          });
-        }
-      });
+      const success = mqttService.publish(connection.topic, connection.message);
+
+      if (success) {
+        // Log success
+        updateMqttConnection(id, (conn) => ({
+          messages: [
+            ...(conn.messages || []),
+            `[${connection.topic}] Sending: ${connection.message}`,
+            `[${connection.topic}] Sent successfully`,
+          ],
+          message: '',
+        }));
+      } else {
+        throw new Error('Failed to publish message');
+      }
     } catch (error) {
-      console.error('Error in sendTCPMessage:', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      updateTcpConnection(id, {
+      updateMqttConnection(id, (conn) => ({
         messages: [
-          ...connection.messages,
+          ...(conn.messages || []),
           `Error sending control message: ${errorMessage}`,
         ],
-      });
+      }));
       showAlert('Error', `Failed to send message: ${errorMessage}`, 'error');
     }
   };
@@ -909,9 +1116,8 @@ export default function SettingsScreen() {
   // Add cleanup on component unmount
   useEffect(() => {
     return () => {
-      Object.values(tcpClients.current).forEach((client) => {
-        client.destroy();
-      });
+      // Cleanup centralized MQTT service if needed
+      // Note: We don't disconnect here as other components might be using it
     };
   }, []);
 
@@ -955,10 +1161,10 @@ export default function SettingsScreen() {
         </SettingSection>
 
         {/* Bluetooth Section */}
-        <SettingSection title="Bluetooth">
-          {/* Bluetooth Status Card */}
-          <View style={styles.bluetoothCard}>
-            <View style={styles.bluetoothHeader}>
+        {/* <SettingSection title="Bluetooth"> */}
+        {/* Bluetooth Status Card */}
+        {/* <View style={styles.bluetoothCard}> */}
+        {/* <View style={styles.bluetoothHeader}>
               <View style={styles.bluetoothStatus}>
                 <View
                   style={[
@@ -1006,10 +1212,10 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </View> */}
 
-            {/* Connected Devices */}
-            {connectedDevices.length > 0 ? (
+        {/* Connected Devices */}
+        {/* {connectedDevices.length > 0 ? (
               <View style={styles.connectedDevices}>
                 <Text style={styles.sectionSubtitle}>Connected Devices</Text>
                 {connectedDevices.map((device) => (
@@ -1060,11 +1266,11 @@ export default function SettingsScreen() {
                   Connect to a device from the available devices list below
                 </Text>
               </View>
-            )}
-          </View>
+            )} */}
+        {/* </View> */}
 
-          {/* Available Devices */}
-          {devices.length > 0 && (
+        {/* Available Devices */}
+        {/* {devices.length > 0 && (
             <View style={styles.deviceList}>
               <Text style={styles.sectionSubtitle1}>Available Devices</Text>
               {devices.map((device) => (
@@ -1101,10 +1307,10 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          )}
+          )} */}
 
-          {/* No Devices Found */}
-          {!isScanning &&
+        {/* No Devices Found */}
+        {/* {!isScanning &&
             devices.length === 0 &&
             connectedDevices.length === 0 && (
               <View style={styles.noDevices}>
@@ -1130,113 +1336,16 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            )}
-        </SettingSection>
+            )} */}
+        {/* </SettingSection> */}
 
-        {/* MQTT Section */}
-        <SettingSection title="MQTT Connection">
-          <View style={styles.mqttCard}>
-            <View style={styles.mqttHeader}>
-              <View style={styles.mqttStatus}>
-                <View
-                  style={[
-                    styles.statusIndicator,
-                    {
-                      backgroundColor:
-                        mqttStatus === 'connected'
-                          ? '#22c55e'
-                          : mqttStatus === 'connecting'
-                          ? '#eab308'
-                          : '#ef4444',
-                    },
-                  ]}
-                />
-                <Text style={styles.statusText}>
-                  {mqttStatus === 'connected'
-                    ? 'Connected'
-                    : mqttStatus === 'connecting'
-                    ? 'Connecting...'
-                    : 'Disconnected'}
-                </Text>
-              </View>
-              <View style={styles.headerButtons}>
-                {mqttConnected ? (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.disconnectButton]}
-                    onPress={disconnectMQTT}
-                  >
-                    <PowerOff size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.headerButton,
-                      mqttStatus === 'connecting' && styles.scanningButton,
-                    ]}
-                    onPress={connectMQTT}
-                    disabled={mqttStatus === 'connecting'}
-                  >
-                    {mqttStatus === 'connecting' ? (
-                      <ActivityIndicator color="#2563eb" />
-                    ) : (
-                      <WifiIcon size={20} color="#2563eb" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            {mqttConnected && (
-              <View style={styles.mqttContent}>
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Topic:</Text>
-                  <TextInput
-                    style={styles.mqttInput}
-                    value={mqttTopic}
-                    onChangeText={setMqttTopic}
-                    placeholder="Enter topic"
-                    placeholderTextColor="#64748b"
-                  />
-                </View>
-
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Message:</Text>
-                  <TextInput
-                    style={[styles.mqttInput, styles.mqttMessageInput]}
-                    value={mqttMessage}
-                    onChangeText={setMqttMessage}
-                    placeholder="Enter message"
-                    placeholderTextColor="#64748b"
-                    multiline
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={styles.publishButton}
-                  onPress={publishMessage}
-                  disabled={!mqttMessage.trim()}
-                >
-                  <Send size={20} color="#ffffff" />
-                  <Text style={styles.publishButtonText}>Publish</Text>
-                </TouchableOpacity>
-
-                <View style={styles.messagesContainer}>
-                  <Text style={styles.messagesTitle}>Recent Messages:</Text>
-                  <ScrollView style={styles.messagesList}>
-                    {mqttMessages.map((msg, index) => (
-                      <Text key={index} style={styles.messageText}>
-                        {msg}
-                      </Text>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            )}
-          </View>
+        {/* MQTT Bridge Section */}
+        <SettingSection title="MQTT Bridge">
+          <MQTTBridgeSection />
         </SettingSection>
 
         {/* Device Control Section */}
-        <SettingSection title="Device Control">
+        {/* <SettingSection title="Device Control">
           <View style={styles.deviceControlCard}>
             <View style={styles.deviceControlHeader}>
               <View style={styles.deviceControlStatus}>
@@ -1325,10 +1434,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* WiFi Scan Section */}
-        <SettingSection title="WiFi Networks">
+        {/* <SettingSection title="WiFi Networks">
           <View style={styles.wifiCard}>
             <View style={styles.wifiHeader}>
               <View style={styles.wifiStatus}>
@@ -1423,10 +1532,10 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Network Scanner Section */}
-        <SettingSection title="Network Devices">
+        {/* <SettingSection title="Network Devices">
           <View style={styles.networkCard}>
             <View style={styles.networkHeader}>
               <View style={styles.networkStatus}>
@@ -1512,27 +1621,146 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
+        </SettingSection> */}
+
+        {/* Centralized MQTT Configuration Section */}
+        <SettingSection title="MQTT Configuration">
+          <View style={styles.tcpCard}>
+            <View style={styles.tcpHeader}>
+              <View style={styles.tcpStatus}>
+                <Text style={styles.statusText}>Centralized MQTT Service</Text>
+              </View>
+              <View style={styles.headerButtons}>
+                {mqttService.isConnected() ? (
+                  <TouchableOpacity
+                    style={[styles.headerButton, styles.disconnectButton]}
+                    onPress={() => mqttService.disconnect()}
+                  >
+                    <PowerOff size={20} color="#ef4444" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.headerButton, styles.addDeviceButton]}
+                    onPress={() => mqttService.connect()}
+                  >
+                    <Network size={20} color="#2563eb" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.tcpContent}>
+              <View style={styles.tcpInputGroup}>
+                <Text style={styles.tcpLabel}>Host:</Text>
+                <TextInput
+                  style={styles.tcpInput}
+                  value={mqttConfig.host}
+                  onChangeText={(text) => {
+                    setMqttConfig((prev) => ({ ...prev, host: text }));
+                    mqttService.updateConfig({ host: text });
+                  }}
+                  placeholder="Enter MQTT broker host"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View style={styles.tcpInputGroup}>
+                <Text style={styles.tcpLabel}>Port:</Text>
+                <TextInput
+                  style={styles.tcpInput}
+                  value={mqttConfig.port.toString()}
+                  onChangeText={(text) => {
+                    const port = parseInt(text) || 1883;
+                    setMqttConfig((prev) => ({ ...prev, port }));
+                    mqttService.updateConfig({ port });
+                  }}
+                  placeholder="Enter MQTT broker port"
+                  placeholderTextColor="#64748b"
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.tcpInputGroup}>
+                <Text style={styles.tcpLabel}>Client ID:</Text>
+                <TextInput
+                  style={styles.tcpInput}
+                  value={mqttConfig.clientId}
+                  onChangeText={(text) => {
+                    setMqttConfig((prev) => ({ ...prev, clientId: text }));
+                    mqttService.updateConfig({ clientId: text });
+                  }}
+                  placeholder="Enter client ID"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View style={styles.tcpInputGroup}>
+                <Text style={styles.tcpLabel}>Username:</Text>
+                <TextInput
+                  style={styles.tcpInput}
+                  value={mqttConfig.username || ''}
+                  onChangeText={(text) => {
+                    setMqttConfig((prev) => ({ ...prev, username: text }));
+                    mqttService.updateConfig({ username: text });
+                  }}
+                  placeholder="Enter username (optional)"
+                  placeholderTextColor="#64748b"
+                />
+              </View>
+
+              <View style={styles.tcpInputGroup}>
+                <Text style={styles.tcpLabel}>Password:</Text>
+                <TextInput
+                  style={styles.tcpInput}
+                  value={mqttConfig.password || ''}
+                  onChangeText={(text) => {
+                    setMqttConfig((prev) => ({ ...prev, password: text }));
+                    mqttService.updateConfig({ password: text });
+                  }}
+                  placeholder="Enter password (optional)"
+                  placeholderTextColor="#64748b"
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.tcpStatus}>
+                <View
+                  style={[
+                    styles.statusIndicator,
+                    {
+                      backgroundColor: mqttService.isConnected()
+                        ? '#22c55e'
+                        : '#ef4444',
+                    },
+                  ]}
+                />
+                <Text style={styles.statusText}>
+                  Status: {mqttService.getStatus()}
+                </Text>
+              </View>
+            </View>
+          </View>
         </SettingSection>
 
-        {/* TCP Connection Test Section */}
-        <SettingSection title="TCP Connection Test">
+        {/* MQTT Connection Test Section */}
+        {/* <SettingSection title="MQTT Connection Test">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
                 <Text style={styles.statusText}>
-                  {tcpConnections.length} Connection
-                  {tcpConnections.length !== 1 ? 's' : ''}
+                  {mqttConnections.length} Connection
+                  {mqttConnections.length !== 1 ? 's' : ''}
                 </Text>
               </View>
               <TouchableOpacity
                 style={[styles.headerButton, styles.addDeviceButton]}
-                onPress={addTcpConnection}
+                onPress={addMqttConnection}
               >
                 <Plus size={20} color="#2563eb" />
               </TouchableOpacity>
             </View>
 
-            {tcpConnections.map((connection) => (
+            {mqttConnections.map((connection) => (
               <View key={connection.id} style={styles.tcpConnectionCard}>
                 <View style={styles.tcpConnectionHeader}>
                   <View style={styles.tcpStatus}>
@@ -1561,7 +1789,7 @@ export default function SettingsScreen() {
                     {connection.status === 'connected' ? (
                       <TouchableOpacity
                         style={[styles.headerButton, styles.disconnectButton]}
-                        onPress={() => disconnectTCP(connection.id)}
+                        onPress={() => disconnectMqtt(connection.id)}
                       >
                         <PowerOff size={20} color="#ef4444" />
                       </TouchableOpacity>
@@ -1572,7 +1800,7 @@ export default function SettingsScreen() {
                           connection.status === 'connecting' &&
                             styles.scanningButton,
                         ]}
-                        onPress={() => connectTCP(connection.id)}
+                        onPress={() => connectMqtt(connection.id)}
                         disabled={connection.status === 'connecting'}
                       >
                         {connection.status === 'connecting' ? (
@@ -1584,7 +1812,7 @@ export default function SettingsScreen() {
                     )}
                     <TouchableOpacity
                       style={[styles.headerButton, styles.removeDeviceButton]}
-                      onPress={() => removeTcpConnection(connection.id)}
+                      onPress={() => removeMqttConnection(connection.id)}
                     >
                       <X size={20} color="#ef4444" />
                     </TouchableOpacity>
@@ -1598,9 +1826,9 @@ export default function SettingsScreen() {
                       style={styles.tcpInput}
                       value={connection.host}
                       onChangeText={(text) =>
-                        updateTcpConnection(connection.id, { host: text })
+                        updateMqttConnection(connection.id, { host: text })
                       }
-                      placeholder="Enter host (e.g., 192.168.1.100)"
+                      placeholder="Enter host (e.g., 127.0.0.1)"
                       placeholderTextColor="#64748b"
                       editable={connection.status === 'disconnected'}
                     />
@@ -1610,13 +1838,58 @@ export default function SettingsScreen() {
                     <Text style={styles.tcpLabel}>Port:</Text>
                     <TextInput
                       style={styles.tcpInput}
-                      value={connection.port}
+                      value={connection.port.toString()}
                       onChangeText={(text) =>
-                        updateTcpConnection(connection.id, { port: text })
+                        updateMqttConnection(connection.id, {
+                          port: parseInt(text) || 1883,
+                        })
                       }
-                      placeholder="Enter port (e.g., 8080)"
+                      placeholder="Enter port (e.g., 1883)"
                       placeholderTextColor="#64748b"
                       keyboardType="numeric"
+                      editable={connection.status === 'disconnected'}
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Client ID:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.clientId}
+                      onChangeText={(text) =>
+                        updateMqttConnection(connection.id, { clientId: text })
+                      }
+                      placeholder="Enter client ID"
+                      placeholderTextColor="#64748b"
+                      editable={connection.status === 'disconnected'}
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Username:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.username || ''}
+                      onChangeText={(text) =>
+                        updateMqttConnection(connection.id, { username: text })
+                      }
+                      placeholder="Enter username (optional)"
+                      placeholderTextColor="#64748b"
+                      editable={connection.status === 'disconnected'}
+                    />
+                  </View>
+
+                  <View style={styles.tcpInputGroup}>
+                    <Text style={styles.tcpLabel}>Password:</Text>
+                    <TextInput
+                      style={styles.tcpInput}
+                      value={connection.password || ''}
+                      onChangeText={(text) =>
+                        updateMqttConnection(connection.id, { password: text })
+                      }
+                      placeholder="Enter password (optional)"
+                      placeholderTextColor="#64748b"
+                      secureTextEntry
                       editable={connection.status === 'disconnected'}
                     />
                   </View>
@@ -1627,9 +1900,9 @@ export default function SettingsScreen() {
                       style={styles.tcpInput}
                       value={connection.topic}
                       onChangeText={(text) =>
-                        updateTcpConnection(connection.id, { topic: text })
+                        updateMqttConnection(connection.id, { topic: text })
                       }
-                      placeholder="Enter topic (e.g., tcp/test)"
+                      placeholder="Enter topic (e.g., test/topic)"
                       placeholderTextColor="#64748b"
                     />
                   </View>
@@ -1640,7 +1913,7 @@ export default function SettingsScreen() {
                       style={[styles.tcpInput, styles.tcpMessageInput]}
                       value={connection.message}
                       onChangeText={(text) =>
-                        updateTcpConnection(connection.id, { message: text })
+                        updateMqttConnection(connection.id, { message: text })
                       }
                       placeholder="Enter test message"
                       placeholderTextColor="#64748b"
@@ -1656,7 +1929,7 @@ export default function SettingsScreen() {
                         connection.status !== 'connected') &&
                         styles.buttonDisabled,
                     ]}
-                    onPress={() => sendTCPMessage(connection.id)}
+                    onPress={() => sendMqttMessage(connection.id)}
                     disabled={
                       !connection.message.trim() ||
                       !connection.topic.trim() ||
@@ -1695,18 +1968,18 @@ export default function SettingsScreen() {
               </View>
             ))}
 
-            {tcpConnections.length === 0 && (
+            {mqttConnections.length === 0 && (
               <View style={styles.noTcpConnections}>
                 <View style={styles.noTcpIcon}>
                   <Network size={48} color="#64748b" />
                 </View>
-                <Text style={styles.noTcpText}>No TCP connections</Text>
+                <Text style={styles.noTcpText}>No MQTT connections</Text>
                 <Text style={styles.noTcpSubtext}>
-                  Add a new TCP connection to start testing
+                  Add a new MQTT connection to start testing
                 </Text>
                 <TouchableOpacity
                   style={styles.addTcpButton}
-                  onPress={addTcpConnection}
+                  onPress={addMqttConnection}
                 >
                   <Text style={styles.addTcpButtonText}>
                     Add TCP Connection
@@ -1715,7 +1988,7 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* Account Section */}
         <SettingSection title="Account">
@@ -2859,5 +3132,146 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // MQTT Bridge Styles
+  brokerInfo: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  brokerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  brokerLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+  },
+  brokerValue: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
+  },
+  testSection: {
+    marginTop: 16,
+  },
+  testTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  testButton: {
+    backgroundColor: '#2563eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  cloudTestButton: {
+    backgroundColor: '#059669',
+  },
+  testButtonActive: {
+    opacity: 0.7,
+  },
+  testButtonError: {
+    backgroundColor: '#dc2626',
+  },
+  testButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  infoSection: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  infoTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  infoText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+
+  // Bridge Test Styles
+  bridgeTestButton: {
+    backgroundColor: '#7c3aed',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  bridgeResults: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  bridgeResultsTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  bridgeResultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  bridgeResultLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
+  bridgeResultValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bridgeErrors: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  bridgeErrorTitle: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  bridgeErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+
+  // Network Section Styles
+  networkSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  networkIndicator: {
+    marginTop: 8,
   },
 });

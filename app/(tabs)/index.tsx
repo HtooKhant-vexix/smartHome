@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -33,8 +33,16 @@ import {
 import { useRouter } from 'expo-router';
 import { RoomCard } from '../../components/RoomCard';
 import { StatCard } from '../../components/StatCard';
-import { useRooms } from '../context/RoomContext';
-import AddRoomModal from '../components/AddRoomModal';
+import AddRoomModal from '../_components/AddRoomModal';
+import {
+  deviceIcons,
+  getDeviceTitle,
+  DeviceType,
+} from '../../constants/defaultData';
+import { useLocalSearchParams } from 'expo-router';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
+import { networkDetector, NetworkInfo } from '../../utils/networkDetection';
+import { RefreshControl } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -102,28 +110,174 @@ const DeviceCard = ({
 export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
   const [isAddRoomModalVisible, setIsAddRoomModalVisible] = useState(false);
-  const { rooms } = useRooms();
-  const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
 
-  console.log(rooms, rooms.length, '...................');
+  // Use Zustand store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
+  const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
+  const currentBroker = useSmartHomeStore((state) => state.mqtt.currentBroker);
+  const sensorData = useSmartHomeStore((state) => state.sensorData);
+
+  // Network information
+  const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
+
+  // Get network info on component mount
+  useEffect(() => {
+    const getNetworkInfo = async () => {
+      try {
+        const info = await networkDetector.getNetworkInfo();
+        setNetworkInfo(info);
+      } catch (error) {
+        console.error('Failed to get network info:', error);
+      }
+    };
+
+    getNetworkInfo();
+
+    // Set up network listener
+    const unsubscribe = networkDetector.addNetworkListener((info) => {
+      setNetworkInfo(info);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const router = useRouter();
+  const { type, id } = useLocalSearchParams();
+
+  // Pull to refresh functionality
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Update network info
+      const info = await networkDetector.getNetworkInfo();
+      setNetworkInfo(info);
+
+      // Force MQTT reconnection check if needed
+      const { connectMqtt } = useSmartHomeStore.getState();
+      if (mqttStatus === 'error' || mqttStatus === 'disconnected') {
+        await connectMqtt();
+      }
+
+      // Add a small delay to show the refresh animation
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error('Refresh failed:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Handle broker indicator tap
+  const handleBrokerIndicatorTap = async () => {
+    if (!networkInfo) return;
+
+    // If on external network but using local broker, suggest switching to cloud
+    if (!networkInfo.isLocalNetwork && currentBroker === 'local') {
+      try {
+        const { switchMqttBroker } = useSmartHomeStore.getState();
+        const success = await switchMqttBroker('cloud');
+        if (success) {
+          console.log('Successfully switched to cloud broker');
+        } else {
+          console.error('Failed to switch to cloud broker');
+        }
+      } catch (error) {
+        console.error('Error switching broker:', error);
+      }
+    } else {
+      // Otherwise just refresh
+      onRefresh();
+    }
+  };
 
   const getIconComponent = (iconName: string) => {
     return ICON_MAP[iconName as keyof typeof ICON_MAP] || Home;
   };
 
+  // Network and broker indicator
+  const getBrokerIndicator = () => {
+    if (!networkInfo) return null;
+
+    const isLocalNetwork = networkInfo.isLocalNetwork;
+    const brokerColor = currentBroker === 'local' ? '#22c55e' : '#3b82f6';
+    const brokerIcon = currentBroker === 'local' ? '🏠' : '☁️';
+    const brokerText = currentBroker === 'local' ? 'Local' : 'Cloud';
+    const networkText = isLocalNetwork ? 'Home Network' : 'External Network';
+
+    // Show fallback indicator if we're on external network but using local broker
+    const showFallbackWarning = !isLocalNetwork && currentBroker === 'local';
+
+    return (
+      <View style={styles.brokerIndicator}>
+        {/* <View style={[styles.brokerIcon, { backgroundColor: brokerColor }]}>
+          <Text style={styles.brokerIconText}>{brokerIcon}</Text>
+        </View> */}
+        <View
+          style={[
+            styles.connectionStatus,
+            {
+              backgroundColor: mqttConnected ? '#22c55e' : '#ef4444',
+            },
+          ]}
+        >
+          {/* <Text style={styles.connectionStatusText}> */}
+          {/* {mqttConnected ? 'Connected' : 'Disconnected'} */}
+          {/* </Text> */}
+        </View>
+        <View style={styles.brokerInfo}>
+          <View style={styles.brokerTitleRow}>
+            <Text style={styles.brokerTitle}>{brokerText}</Text>
+            {showFallbackWarning && (
+              <Text style={styles.fallbackIndicator}>⚠️</Text>
+            )}
+          </View>
+          {/* <Text style={styles.brokerSubtitle}>{networkText}</Text> */}
+          {/* {showFallbackWarning && (
+            <Text style={styles.fallbackText}>Tap to switch to cloud</Text>
+          )} */}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#2563eb']}
+            tintColor="#2563eb"
+            title="Refreshing..."
+            titleColor="#2563eb"
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Hello, Htoo</Text>
+            <Text style={styles.greeting}>Sixth Kendra</Text>
             <Text style={styles.subtitle}>Welcome back to your smart home</Text>
           </View>
           <TouchableOpacity style={styles.notificationButton}>
             <Bell size={24} color="#2563eb" />
           </TouchableOpacity>
         </View>
+
+        {/* Network and Broker Indicator */}
+        <TouchableOpacity
+          style={styles.brokerIndicatorTouchable}
+          onPress={handleBrokerIndicatorTap}
+          activeOpacity={0.8}
+        >
+          {getBrokerIndicator()}
+        </TouchableOpacity>
 
         {/* Weather Card */}
         <LinearGradient
@@ -136,7 +290,14 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.temperature}>20°C</Text>
               <Text style={styles.weatherCondition}>Cloudy</Text>
-              <Text style={styles.weatherDate}>Tue, November 23</Text>
+              <Text style={styles.weatherDate}>
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </Text>
             </View>
             <Cloud size={60} color="white" />
           </View>
@@ -144,7 +305,11 @@ export default function HomeScreen() {
           <View style={styles.weatherStats}>
             <StatCard
               label="Indoor temp"
-              value="23° C"
+              value={
+                sensorData.temperature > 0
+                  ? `${sensorData.temperature.toFixed(1)}° C`
+                  : '--° C'
+              }
               icon={<Thermometer size={16} color="#2563eb" />}
             />
             <StatCard
@@ -210,30 +375,30 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.deviceGrid}>
-            <DeviceCard
-              title="Smart Light"
-              icon={Lightbulb}
-              deviceCount={4}
-              activeCount={2}
-            />
-            <DeviceCard
-              title="Smart AC"
-              icon={Wind}
-              deviceCount={2}
-              activeCount={1}
-            />
-            <DeviceCard
-              title="Smart TV"
-              icon={Tv}
-              deviceCount={2}
-              activeCount={1}
-            />
-            <DeviceCard
-              title="Air Purifier"
-              icon={Monitor}
-              deviceCount={2}
-              activeCount={1}
-            />
+            {(Object.keys(deviceIcons) as DeviceType[])
+              .map((t) => {
+                const deviceCount = rooms.reduce(
+                  (acc, r) => acc + (r.devices[t]?.length || 0),
+                  0
+                );
+                const activeCount = rooms.reduce(
+                  (acc, r) =>
+                    acc +
+                    (r.devices[t]?.filter((d) => d.isActive)?.length || 0),
+                  0
+                );
+                return { t, deviceCount, activeCount };
+              })
+              .filter(({ deviceCount }) => deviceCount > 0)
+              .map(({ t, deviceCount, activeCount }) => (
+                <DeviceCard
+                  key={t}
+                  title={getDeviceTitle(t)}
+                  icon={deviceIcons[t]}
+                  deviceCount={deviceCount}
+                  activeCount={activeCount}
+                />
+              ))}
           </View>
         )}
 
@@ -278,7 +443,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 30,
+    // paddingBottom: 30,
   },
   greeting: {
     fontSize: 28,
@@ -444,5 +609,78 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Medium',
     color: '#2563eb',
     marginLeft: 8,
+  },
+
+  // Broker and Network Indicator Styles
+  brokerIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    // backgroundColor: '#1e293b',
+    // marginHorizontal: 20,
+    // marginBottom: 20,
+    // paddingHorizontal: 16,
+    // paddingVertical: 12,
+    borderRadius: 12,
+    marginLeft: 4,
+    marginTop: 4,
+    marginBottom: -10,
+    // borderWidth: 1,
+    // borderColor: '#334155',
+  },
+  brokerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    // justifyContent: 'center',
+    // alignItems: 'center',
+    marginRight: 12,
+  },
+  brokerIconText: {
+    fontSize: 20,
+  },
+  brokerInfo: {
+    flex: 1,
+  },
+  brokerTitleRow: {
+    flexDirection: 'row',
+    // alignItems: 'center',
+    marginBottom: 2,
+  },
+  brokerTitle: {
+    fontSize: 10,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+  },
+  fallbackIndicator: {
+    fontSize: 10,
+    color: '#f59e0b',
+    marginLeft: 6,
+  },
+  fallbackText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: '#f59e0b',
+    fontStyle: 'italic',
+  },
+  brokerSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+  },
+  connectionStatus: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 6,
+  },
+  connectionStatusText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: 'white',
+  },
+  brokerIndicatorTouchable: {
+    marginHorizontal: 20,
+    marginBottom: 20,
   },
 });

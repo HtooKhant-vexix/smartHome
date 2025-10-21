@@ -1,5 +1,19 @@
 import { Lightbulb, Wind, Tv, Monitor } from 'lucide-react-native';
 
+// Authentication types
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
 // Device type definitions
 export type DeviceType =
   | 'smart-light'
@@ -12,6 +26,16 @@ export interface Device {
   id: string;
   name: string;
   isActive: boolean;
+  // AC-specific properties (optional, only for smart-ac devices)
+  acSettings?: {
+    mode: 'auto' | 'cool' | 'heat' | 'dry' | 'fan';
+    temperature: number;
+    fanSpeed: 'auto' | 'low' | 'med' | 'high';
+    swingV: boolean;
+    swingH: boolean;
+    online?: boolean;
+    lastSeen?: string;
+  };
 }
 
 // Room interface
@@ -50,45 +74,62 @@ export const defaultRoomData: Record<string, Room> = {
     name: 'Living Room',
     devices: {
       'smart-light': [
-        { id: '1', name: 'Main Light', isActive: true },
-        { id: '2', name: 'Lamp', isActive: false },
+        { id: '1', name: 'Light Switch', isActive: false },
+        { id: '2', name: 'AC Switch', isActive: false },
+        { id: '3', name: 'Socket Switch', isActive: false },
+        { id: '4', name: 'RGB Light', isActive: false },
       ],
-      'smart-ac': [{ id: '1', name: 'Main AC', isActive: true }],
-      'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
-      'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
+      'smart-ac': [
+        {
+          id: '1',
+          name: 'Main AC',
+          isActive: false,
+          acSettings: {
+            mode: 'cool',
+            temperature: 24,
+            fanSpeed: 'auto',
+            swingV: false,
+            swingH: false,
+            online: false,
+            lastSeen: '',
+          },
+        },
+      ],
+      // 'smart-tv': [{ id: '1', name: 'Samsung TV', isActive: true }],
+      // 'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
     },
   },
-  bedroom: {
-    name: 'Bedroom',
-    devices: {
-      'smart-light': [
-        { id: '3', name: 'Ceiling Light', isActive: true },
-        { id: '4', name: 'Night Lamp', isActive: false },
-      ],
-      'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
-      'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
-      'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
-    },
-  },
-  kitchen: {
-    name: 'Kitchen',
-    devices: {
-      'smart-light': [
-        // { id: '5', name: 'Main Light', isActive: true },
-        // { id: '6', name: 'Under Cabinet', isActive: true },
-      ],
-    },
-  },
-  bathroom: {
-    name: 'Bathroom',
-    devices: {
-      'smart-light': [
-        { id: '7', name: 'Main Light', isActive: false },
-        { id: '8', name: 'Mirror Light', isActive: true },
-      ],
-    },
-  },
-} as const;
+  // bedroom: {
+  //   name: 'Bedroom',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '3', name: 'Ceiling Light', isActive: true },
+  //       { id: '4', name: 'Night Lamp', isActive: false },
+  //     ],
+  //     'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
+  //     'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
+  //     'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
+  //   },
+  // },
+  // kitchen: {
+  //   name: 'Kitchen',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '5', name: 'Main Light', isActive: true },
+  //       // { id: '6', name: 'Under Cabinet', isActive: true },
+  //     ],
+  //   },
+  // },
+  // bathroom: {
+  //   name: 'Bathroom',
+  //   devices: {
+  //     'smart-light': [
+  //       { id: '7', name: 'Main Light', isActive: false },
+  //       { id: '8', name: 'Mirror Light', isActive: true },
+  //     ],
+  //   },
+  // },
+};
 
 // Helper function to get device title
 export const getDeviceTitle = (deviceType: DeviceType): string => {

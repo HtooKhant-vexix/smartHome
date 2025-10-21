@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,42 +16,41 @@ import {
   DeviceType,
   Device,
 } from '../../constants/defaultData';
-import { useRooms } from '../context/RoomContext';
-import AddDeviceModal from '../components/AddDeviceModal';
-import RoomSelectionModal from '../components/RoomSelectionModal';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
+import AddDeviceModal from '../_components/AddDeviceModal';
+import RoomSelectionModal from '../_components/RoomSelectionModal';
 
 export default function DeviceListScreen() {
   const router = useRouter();
   const { type } = useLocalSearchParams();
   const deviceType = type as DeviceType;
   const deviceTitle = getDeviceTitle(deviceType);
-  const { rooms, updateRoom } = useRooms();
+
+  // Use Zustand store
+  const rooms = useSmartHomeStore((state) => state.rooms);
+  const toggleDeviceWithMqtt = useSmartHomeStore(
+    (state) => state.toggleDeviceWithMqtt
+  );
+
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
   const [isRoomSelectionModalVisible, setIsRoomSelectionModalVisible] =
     useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
 
-  const toggleDevice = (roomId: string, deviceId: string) => {
-    const room = rooms.find((r) => r.id === roomId);
-    if (room) {
-      const devices = room.devices[deviceType] || [];
-      const updatedDevices = devices.map((device) =>
-        device.id === deviceId
-          ? {
-              ...device,
-              isActive:
-                device.isActive === undefined ? false : !device.isActive,
-            }
-          : device
-      );
-
-      const updatedRoomDevices = {
-        ...room.devices,
-        [deviceType]: updatedDevices,
-      };
-
-      updateRoom(roomId, { devices: updatedRoomDevices });
-    }
+  const toggleDevice = (
+    roomId: string,
+    deviceId: string,
+    deviceIndex: number
+  ) => {
+    console.log(
+      'toggleDevice: room_Id ->',
+      roomId,
+      '| device_Id->',
+      deviceId,
+      '| device_Index->',
+      deviceIndex
+    );
+    toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
   };
 
   const DeviceIcon = deviceIcons[deviceType];
@@ -81,6 +80,8 @@ export default function DeviceListScreen() {
       setIsRoomSelectionModalVisible(true);
     }
   };
+
+  // MQTT is now handled in the Zustand store - no need for subscriptions here
 
   return (
     <SafeAreaView style={styles.container}>
@@ -127,6 +128,7 @@ export default function DeviceListScreen() {
           {rooms.map((room) => {
             const devices = room.devices[deviceType] || [];
             if (devices.length === 0) return null;
+            console.log('devices ->', devices);
 
             return (
               <View key={room.id} style={styles.roomSection}>
@@ -138,7 +140,7 @@ export default function DeviceListScreen() {
                   <ChevronRight size={20} color="#94a3b8" />
                 </TouchableOpacity>
 
-                {devices.map((device) => (
+                {devices.map((device, idx) => (
                   <TouchableOpacity
                     key={device.id}
                     onPress={() =>
@@ -152,7 +154,7 @@ export default function DeviceListScreen() {
                       title={device.name}
                       icon={DeviceIcon}
                       isActive={device.isActive}
-                      onToggle={() => toggleDevice(room.id, device.id)}
+                      onToggle={() => toggleDevice(room.id, device.id, idx)}
                     />
                   </TouchableOpacity>
                 ))}

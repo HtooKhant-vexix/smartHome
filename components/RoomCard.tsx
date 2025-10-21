@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useRooms } from '../app/context/RoomContext';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { DeviceType } from '../constants/defaultData';
 
 interface RoomCardProps {
@@ -12,7 +12,7 @@ interface RoomCardProps {
 
 export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
   const router = useRouter();
-  const { rooms } = useRooms();
+  const rooms = useSmartHomeStore((state) => state.rooms);
   const room = rooms.find((r) => r.id === roomId);
 
   if (!room) {
@@ -27,7 +27,9 @@ export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
     }))
   );
 
-  const activeDevices = allDevices.filter((device) => device.isActive).length;
+  const activeDevices = allDevices.filter(
+    (device) => device.isActive === true
+  ).length;
   const totalDevices = allDevices.length;
 
   return (

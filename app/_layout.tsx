@@ -11,7 +11,9 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
-import { RoomProvider } from './context/RoomContext';
+import { useSmartHomeStore } from '@/store/useSmartHomeStore';
+import { AuthProvider } from '../_context/AuthContext';
+import { AuthGuard } from '../components/AuthGuard';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -25,18 +27,30 @@ export default function RootLayout() {
     'Inter-Bold': Inter_700Bold,
   });
 
+  // Initialize the Zustand store
+  const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
+  const loadConfiguredDevices = useSmartHomeStore(
+    (state) => state.loadConfiguredDevices
+  );
+
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
 
+  useEffect(() => {
+    // Initialize MQTT and load devices when app starts
+    initializeMqtt();
+    loadConfiguredDevices();
+  }, []);
+
   if (!fontsLoaded) {
     return null;
   }
 
   return (
-    <RoomProvider>
+    <AuthProvider>
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <Stack
           screenOptions={{
@@ -69,6 +83,6 @@ export default function RootLayout() {
         </Stack>
         <StatusBar style="light" />
       </View>
-    </RoomProvider>
+    </AuthProvider>
   );
 }
