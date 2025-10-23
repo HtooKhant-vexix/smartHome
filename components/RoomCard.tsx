@@ -7,7 +7,6 @@ import { DeviceType } from '../constants/defaultData';
 interface RoomCardProps {
   roomId: string;
   icon: React.ElementType;
-  data: {};
 }
 
 export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {

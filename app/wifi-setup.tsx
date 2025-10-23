@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -108,9 +108,9 @@ export default function WifiSetupScreen() {
     return () => {
       bluetoothService.stopScan();
     };
-  }, []);
+  }, [startScan]);
 
-  const startScan = async () => {
+  const startScan = useCallback(async () => {
     try {
       setIsScanning(true);
       setDevices([]);
@@ -131,7 +131,7 @@ export default function WifiSetupScreen() {
       setIsScanning(false);
       showAlert('Error', 'Failed to start scanning', 'error');
     }
-  };
+  }, [showAlert]);
 
   const connectToDevice = async (device: Device) => {
     try {

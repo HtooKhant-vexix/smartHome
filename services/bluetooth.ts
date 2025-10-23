@@ -5,6 +5,7 @@ import {
   Characteristic,
 } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
+import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { Buffer } from 'buffer';
 
 interface WriteCharacteristic {
@@ -77,6 +78,34 @@ class BluetoothService {
           result['android.permission.ACCESS_FINE_LOCATION'] ===
             PermissionsAndroid.RESULTS.GRANTED
         );
+      }
+    } else if (Platform.OS === 'ios') {
+      try {
+        // Request iOS Bluetooth permissions
+        const bluetoothScanResult = await request(
+          PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL
+        );
+        const bluetoothConnectResult = await request(
+          PERMISSIONS.IOS.BLUETOOTH_SCAN
+        );
+        const locationResult = await request(
+          PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+        );
+
+        console.log('iOS Permission Results:', {
+          bluetoothScan: bluetoothScanResult,
+          bluetoothConnect: bluetoothConnectResult,
+          location: locationResult,
+        });
+
+        return (
+          bluetoothScanResult === RESULTS.GRANTED &&
+          bluetoothConnectResult === RESULTS.GRANTED &&
+          locationResult === RESULTS.GRANTED
+        );
+      } catch (error) {
+        console.error('Error requesting iOS permissions:', error);
+        return false;
       }
     }
     return true;

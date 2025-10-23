@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
-  Animated,
   Dimensions,
   TextInput,
   Modal,
@@ -29,22 +28,13 @@ import {
   Globe,
   Palette,
   Bluetooth,
-  BluetoothConnected,
   RefreshCw,
   X,
-  Signal,
-  WifiOff,
-  PowerOff,
-  Radio,
   Send,
-  FileJson,
-  FileText,
   Wifi as WifiIcon,
   Router,
-  Wifi as WifiIcon2,
   Network,
   Server,
-  Plus,
 } from 'lucide-react-native';
 import { bluetoothService } from '../../services/bluetooth';
 import { Device } from 'react-native-ble-plx';
@@ -55,7 +45,14 @@ import {
   mqttService,
   MqttConfig,
   MqttConnectionStatus,
+  MqttBridgeStatus,
+  BrokerType,
 } from '../../services/mqttService';
+import {
+  mqttBridgeTester,
+  BridgeTestResult,
+} from '../../services/mqttBridgeTest';
+import { useSmartHomeStore } from '../../store/useSmartHomeStore';
 
 const { width } = Dimensions.get('window');
 
@@ -127,6 +124,310 @@ interface MqttConnectionUI {
   message: string;
 }
 
+// MQTT Bridge Section Component
+function MQTTBridgeSection() {
+  const {
+    mqtt,
+    switchMqttBroker,
+    getCurrentMqttBroker,
+    getMqttBrokerConfigs,
+    testMqttBrokerConnection,
+  } = useSmartHomeStore();
+
+  const [isTestingLocal, setIsTestingLocal] = useState(false);
+  const [isTestingCloud, setIsTestingCloud] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [testResults, setTestResults] = useState<{
+    local: boolean | null;
+    cloud: boolean | null;
+  }>({ local: null, cloud: null });
+  const [bridgeTestResults, setBridgeTestResults] =
+    useState<BridgeTestResult | null>(null);
+  const [isTestingBridge, setIsTestingBridge] = useState(false);
+
+  const currentBroker = getCurrentMqttBroker();
+
+  const testBroker = async (brokerType: BrokerType) => {
+    if (brokerType === 'local') {
+      setIsTestingLocal(true);
+    } else {
+      setIsTestingCloud(true);
+    }
+
+    try {
+      const result = await testMqttBrokerConnection(brokerType);
+      setTestResults((prev) => ({ ...prev, [brokerType]: result }));
+    } catch (error) {
+      console.error(`Error testing ${brokerType} broker:`, error);
+      setTestResults((prev) => ({ ...prev, [brokerType]: false }));
+    } finally {
+      if (brokerType === 'local') {
+        setIsTestingLocal(false);
+      } else {
+        setIsTestingCloud(false);
+      }
+    }
+  };
+
+  const handleSwitchBroker = async (brokerType: BrokerType) => {
+    setIsSwitching(true);
+    try {
+      await switchMqttBroker(brokerType);
+      setTestResults({ local: null, cloud: null }); // Reset test results
+    } catch (error) {
+      console.error('Error switching broker:', error);
+      Alert.alert('Error', 'Failed to switch MQTT broker');
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
+  const testBridge = async () => {
+    setIsTestingBridge(true);
+    try {
+      const results = await mqttBridgeTester.runFullBridgeTest();
+      setBridgeTestResults(results);
+    } catch (error) {
+      console.error('Bridge test error:', error);
+      Alert.alert('Error', 'Failed to test MQTT bridge');
+    } finally {
+      setIsTestingBridge(false);
+    }
+  };
+
+  const getStatusColor = (status: MqttBridgeStatus) => {
+    switch (status) {
+      case 'connected':
+        return '#22c55e';
+      case 'connecting':
+      case 'switching':
+        return '#eab308';
+      default:
+        return '#ef4444';
+    }
+  };
+
+  const getStatusText = (status: MqttBridgeStatus) => {
+    switch (status) {
+      case 'connected':
+        return 'Connected';
+      case 'connecting':
+        return 'Connecting...';
+      case 'switching':
+        return 'Switching...';
+      case 'disconnected':
+        return 'Disconnected';
+      case 'error':
+        return 'Error';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  return (
+    <View>
+      {/* Current Status */}
+      <View style={styles.mqttCard}>
+        <View style={styles.mqttHeader}>
+          <View style={styles.mqttStatus}>
+            <View
+              style={[
+                styles.statusIndicator,
+                { backgroundColor: getStatusColor(mqtt.status) },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              {getStatusText(mqtt.status)} ({currentBroker.toUpperCase()})
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={[
+                styles.headerButton,
+                isSwitching && styles.scanningButton,
+              ]}
+              onPress={() =>
+                handleSwitchBroker(
+                  currentBroker === 'local' ? 'cloud' : 'local'
+                )
+              }
+              disabled={isSwitching}
+            >
+              {isSwitching ? (
+                <ActivityIndicator color="#2563eb" />
+              ) : (
+                <RefreshCw size={20} color="#2563eb" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+        {/* Broker Information */}
+        {/* <View style={styles.brokerInfo}>
+          <View style={styles.brokerRow}>
+            <Text style={styles.brokerLabel}>Local Broker:</Text>
+            <Text style={styles.brokerValue}>
+              {brokerConfigs.local.host}:{brokerConfigs.local.port}
+            </Text>
+          </View>
+          <View style={styles.brokerRow}>
+            <Text style={styles.brokerLabel}>Cloud Broker:</Text>
+            <Text style={styles.brokerValue}>
+              {brokerConfigs.cloud.host}:{brokerConfigs.cloud.port}
+            </Text>
+          </View>
+        </View> */}
+        {/* Network Information */}
+        {/* <View style={styles.networkSection}>
+          <Text style={styles.sectionTitle}>Network Status</Text>
+          <NetworkIndicator style={styles.networkIndicator} />
+        </View> */}{' '}
+        <View style={styles.testSection}>
+          <Text style={styles.testTitle}>Broker Testing</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              isTestingLocal && styles.testButtonActive,
+              testResults.local === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('local')}
+            disabled={isTestingLocal}
+          >
+            {isTestingLocal ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <WifiIcon size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Local (
+                  {testResults.local === true
+                    ? '✓'
+                    : testResults.local === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.cloudTestButton,
+              isTestingCloud && styles.testButtonActive,
+              testResults.cloud === false && styles.testButtonError,
+            ]}
+            onPress={() => testBroker('cloud')}
+            disabled={isTestingCloud}
+          >
+            {isTestingCloud ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Server size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>
+                  Test Cloud (
+                  {testResults.cloud === true
+                    ? '✓'
+                    : testResults.cloud === false
+                    ? '✗'
+                    : '?'}
+                  )
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.testButton,
+              styles.bridgeTestButton,
+              isTestingBridge && styles.testButtonActive,
+            ]}
+            onPress={testBridge}
+            disabled={isTestingBridge}
+          >
+            {isTestingBridge ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Router size={20} color="#ffffff" />
+                <Text style={styles.testButtonText}>Test Bridge</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Broker Testing */}
+
+      {/* Bridge Test Results */}
+      {bridgeTestResults && (
+        <View style={styles.bridgeResults}>
+          <Text style={styles.bridgeResultsTitle}>Bridge Test Results:</Text>
+          <View style={styles.bridgeResultRow}>
+            <Text style={styles.bridgeResultLabel}>Cloud → Local:</Text>
+            <Text
+              style={[
+                styles.bridgeResultValue,
+                {
+                  color: bridgeTestResults?.bridgeTest?.cloudToLocal
+                    ? '#22c55e'
+                    : '#ef4444',
+                },
+              ]}
+            >
+              {bridgeTestResults?.bridgeTest?.cloudToLocal
+                ? '✅ Working'
+                : '❌ Failed'}
+            </Text>
+          </View>
+          <View style={styles.bridgeResultRow}>
+            <Text style={styles.bridgeResultLabel}>Local → Cloud:</Text>
+            <Text
+              style={[
+                styles.bridgeResultValue,
+                {
+                  color: bridgeTestResults?.bridgeTest?.localToCloud
+                    ? '#22c55e'
+                    : '#ef4444',
+                },
+              ]}
+            >
+              {bridgeTestResults?.bridgeTest?.localToCloud
+                ? '✅ Working'
+                : '❌ Failed'}
+            </Text>
+          </View>
+          {bridgeTestResults?.bridgeTest?.error && (
+            <View style={styles.bridgeErrors}>
+              <Text style={styles.bridgeErrorTitle}>Bridge Error:</Text>
+              <Text style={styles.bridgeErrorText}>
+                • {bridgeTestResults.bridgeTest.error}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Connection Info */}
+      {/* <View style={styles.infoSection}>
+        <Text style={styles.infoTitle}>Connection Information</Text>
+        <Text style={styles.infoText}>
+          • Local: {brokerConfigs.local.host}:{brokerConfigs.local.port}
+        </Text>
+        <Text style={styles.infoText}>
+          • Cloud: {brokerConfigs.cloud.host}:{brokerConfigs.cloud.port}
+        </Text>
+        <Text style={styles.infoText}>
+          • Auto-switching: Enabled (connects to best available broker)
+        </Text>
+      </View> */}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
@@ -167,17 +468,17 @@ export default function SettingsScreen() {
   const [isSending, setIsSending] = useState(false);
   const [isBluetoothReady, setIsBluetoothReady] = useState(false);
   const [wifiNetworks, setWifiNetworks] = useState<
-    Array<{ ssid: string; rssi: number }>
+    { ssid: string; rssi: number }[]
   >([]);
   const [isWifiScanning, setIsWifiScanning] = useState(false);
   const [showWifiScan, setShowWifiScan] = useState(false);
   const [networkDevices, setNetworkDevices] = useState<
-    Array<{
+    {
       ip: string;
       mac: string;
       hostname: string;
       vendor: string;
-    }>
+    }[]
   >([]);
   const [isScanningNetwork, setIsScanningNetwork] = useState(false);
   const [tcpStatus, setTcpStatus] = useState<
@@ -290,7 +591,7 @@ export default function SettingsScreen() {
       }
     };
 
-    initializeBluetooth();
+    // initializeBluetooth();
 
     return () => {
       bluetoothService.stopScan();
@@ -340,7 +641,7 @@ export default function SettingsScreen() {
       }
 
       // Refresh the device list
-      await startScan();
+      // await startScan();
       // Update connected devices list
       setConnectedDevices(bluetoothService.getConnectedDevices());
     } catch (error) {
@@ -700,8 +1001,18 @@ export default function SettingsScreen() {
       mqttService.subscribe(connection.topic);
 
       // Update connection status
+      const bridgeStatus = mqttService.getStatus();
+      const connectionStatus: MqttConnectionStatus =
+        bridgeStatus === 'connected'
+          ? 'connected'
+          : bridgeStatus === 'connecting'
+          ? 'connecting'
+          : bridgeStatus === 'error'
+          ? 'error'
+          : 'disconnected';
+
       updateMqttConnection(id, {
-        status: mqttService.getStatus(),
+        status: connectionStatus,
         messages: [
           ...connection.messages,
           `Connected to ${connection.host}:${connection.port}`,
@@ -1015,106 +1326,9 @@ export default function SettingsScreen() {
             )} */}
         {/* </SettingSection> */}
 
-        {/* MQTT Section */}
-        {/* <SettingSection title="MQTT Connection">
-          <View style={styles.mqttCard}>
-            <View style={styles.mqttHeader}>
-              <View style={styles.mqttStatus}>
-                <View
-                  style={[
-                    styles.statusIndicator,
-                    {
-                      backgroundColor:
-                        mqttStatus === 'connected'
-                          ? '#22c55e'
-                          : mqttStatus === 'connecting'
-                          ? '#eab308'
-                          : '#ef4444',
-                    },
-                  ]}
-                />
-                <Text style={styles.statusText}>
-                  {mqttStatus === 'connected'
-                    ? 'Connected'
-                    : mqttStatus === 'connecting'
-                    ? 'Connecting...'
-                    : 'Disconnected'}
-                </Text>
-              </View>
-              <View style={styles.headerButtons}>
-                {mqttConnected ? (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.disconnectButton]}
-                    onPress={disconnectMQTT}
-                  >
-                    <PowerOff size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.headerButton,
-                      mqttStatus === 'connecting' && styles.scanningButton,
-                    ]}
-                    onPress={connectMQTT}
-                    disabled={mqttStatus === 'connecting'}
-                  >
-                    {mqttStatus === 'connecting' ? (
-                      <ActivityIndicator color="#2563eb" />
-                    ) : (
-                      <WifiIcon size={20} color="#2563eb" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            {mqttConnected && (
-              <View style={styles.mqttContent}>
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Topic:</Text>
-                  <TextInput
-                    style={styles.mqttInput}
-                    value={mqttTopic}
-                    onChangeText={setMqttTopic}
-                    placeholder="Enter topic"
-                    placeholderTextColor="#64748b"
-                  />
-                </View>
-
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Message:</Text>
-                  <TextInput
-                    style={[styles.mqttInput, styles.mqttMessageInput]}
-                    value={mqttMessage}
-                    onChangeText={setMqttMessage}
-                    placeholder="Enter message"
-                    placeholderTextColor="#64748b"
-                    multiline
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={styles.publishButton}
-                  onPress={publishMessage}
-                  disabled={!mqttMessage.trim()}
-                >
-                  <Send size={20} color="#ffffff" />
-                  <Text style={styles.publishButtonText}>Publish</Text>
-                </TouchableOpacity>
-
-                <View style={styles.messagesContainer}>
-                  <Text style={styles.messagesTitle}>Recent Messages:</Text>
-                  <ScrollView style={styles.messagesList}>
-                    {mqttMessages.map((msg, index) => (
-                      <Text key={index} style={styles.messageText}>
-                        {msg}
-                      </Text>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            )}
-          </View>
+        {/* MQTT Bridge Section */}
+        {/* <SettingSection title="MQTT Bridge">
+          <MQTTBridgeSection />
         </SettingSection> */}
 
         {/* Device Control Section */}
@@ -1397,7 +1611,7 @@ export default function SettingsScreen() {
         </SettingSection> */}
 
         {/* Centralized MQTT Configuration Section */}
-        <SettingSection title="MQTT Configuration">
+        {/* <SettingSection title="MQTT Configuration">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1513,7 +1727,7 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* MQTT Connection Test Section */}
         {/* <SettingSection title="MQTT Connection Test">
@@ -2905,5 +3119,146 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // MQTT Bridge Styles
+  brokerInfo: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  brokerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  brokerLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+  },
+  brokerValue: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
+  },
+  testSection: {
+    marginTop: 16,
+  },
+  testTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  testButton: {
+    backgroundColor: '#2563eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  cloudTestButton: {
+    backgroundColor: '#059669',
+  },
+  testButtonActive: {
+    opacity: 0.7,
+  },
+  testButtonError: {
+    backgroundColor: '#dc2626',
+  },
+  testButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  infoSection: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  infoTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  infoText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+
+  // Bridge Test Styles
+  bridgeTestButton: {
+    backgroundColor: '#7c3aed',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  bridgeResults: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  bridgeResultsTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  bridgeResultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  bridgeResultLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
+  bridgeResultValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bridgeErrors: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  bridgeErrorTitle: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  bridgeErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+
+  // Network Section Styles
+  networkSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  networkIndicator: {
+    marginTop: 8,
   },
 });
