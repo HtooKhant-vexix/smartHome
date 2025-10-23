@@ -33,8 +33,8 @@ const BROKER_CONFIGS: BrokerConfigurations = {
     clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
     username: 'detpos',
     password: 'asdffdsa',
-    useSSL: false,
-    keepAlive: 60,
+    useSSL: false, // Local broker typically doesn't use SSL
+    keepAlive: 30, // Reduced for better mobile connectivity
     cleanSession: true,
     type: 'local',
   },
@@ -45,7 +45,7 @@ const BROKER_CONFIGS: BrokerConfigurations = {
     username: 'smart',
     password: 'Asdffdsa-4580',
     useSSL: true,
-    keepAlive: 60,
+    keepAlive: 30, // Reduced for better mobile connectivity
     cleanSession: true,
     type: 'cloud',
   },
@@ -908,7 +908,7 @@ function createService(
 
         return new Promise<boolean>((resolve, reject) => {
           const options: Paho.ConnectionOptions = {
-            timeout: 30, // Connection timeout in seconds
+            timeout: 15, // Connection timeout in seconds (reduced for mobile networks)
             onSuccess: () => {
               console.log(
                 `✅ MQTT Connected successfully to ${currentBroker} broker`
@@ -1015,7 +1015,7 @@ function createService(
             userName: config.username,
             password: config.password,
             useSSL: config.useSSL || false,
-            keepAliveInterval: config.keepAlive || 60,
+            keepAliveInterval: config.keepAlive || 30, // Reduced for better mobile connectivity
             cleanSession: config.cleanSession || true,
             reconnect: true, // Enable automatic reconnection
           };
