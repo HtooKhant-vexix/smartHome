@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Bell,
   Cloud,
-  Lightbulb,
-  Monitor,
   Tv,
-  Wind,
   Thermometer,
   Droplets,
   Gauge,
@@ -39,7 +37,6 @@ import {
   getDeviceTitle,
   DeviceType,
 } from '../../constants/defaultData';
-import { useLocalSearchParams } from 'expo-router';
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { networkDetector, NetworkInfo } from '../../utils/networkDetection';
 import { RefreshControl } from 'react-native';
@@ -111,6 +108,31 @@ export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
   const [isAddRoomModalVisible, setIsAddRoomModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const pulseAnimation = useRef(new Animated.Value(1)).current;
+
+  // Pulse animation effect for refresh indicator
+  useEffect(() => {
+    if (refreshing) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnimation, {
+            toValue: 1.2,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnimation, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnimation.setValue(1);
+    }
+  }, [refreshing, pulseAnimation]);
 
   // Use Zustand store
   const rooms = useSmartHomeStore((state) => state.rooms);
@@ -122,14 +144,38 @@ export default function HomeScreen() {
   // Network information
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
 
+  // Loading state for initial network detection
+  const [isNetworkDetectionReady, setIsNetworkDetectionReady] = useState(false);
+
+  // Debug logging for broker changes
+  React.useEffect(() => {
+    console.log('🔄 Broker indicator updated:', {
+      currentBroker,
+      mqttConnected,
+      mqttStatus,
+      networkInfo: networkInfo?.ssid,
+      isNetworkDetectionReady,
+    });
+  }, [
+    currentBroker,
+    mqttConnected,
+    mqttStatus,
+    networkInfo,
+    isNetworkDetectionReady,
+  ]);
+
   // Get network info on component mount
   useEffect(() => {
     const getNetworkInfo = async () => {
       try {
         const info = await networkDetector.getNetworkInfo();
         setNetworkInfo(info);
+        setIsNetworkDetectionReady(true);
+        console.log('✅ Network detection ready:', info);
       } catch (error) {
         console.error('Failed to get network info:', error);
+        // Set ready state even on error to prevent infinite loading
+        setIsNetworkDetectionReady(true);
       }
     };
 
@@ -138,36 +184,55 @@ export default function HomeScreen() {
     // Set up network listener
     const unsubscribe = networkDetector.addNetworkListener((info) => {
       setNetworkInfo(info);
+      if (!isNetworkDetectionReady) {
+        setIsNetworkDetectionReady(true);
+        console.log('✅ Network detection ready from listener:', info);
+      }
     });
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [isNetworkDetectionReady]);
 
   const router = useRouter();
-  const { type, id } = useLocalSearchParams();
 
   // Pull to refresh functionality
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      // Update network info
-      const info = await networkDetector.getNetworkInfo();
-      setNetworkInfo(info);
+      console.log('🔄 Pull to refresh initiated');
 
-      // Force MQTT reconnection check if needed
+      // Update network info with retry logic
+      try {
+        const info = await networkDetector.getNetworkInfo();
+        setNetworkInfo(info);
+        setIsNetworkDetectionReady(true);
+        console.log('✅ Network info updated during refresh:', info);
+      } catch (error) {
+        console.error('Failed to update network info during refresh:', error);
+        // Still set ready state to prevent infinite loading
+        setIsNetworkDetectionReady(true);
+      }
+
+      // Force MQTT reconnection and broker re-detection
       const { connectMqtt } = useSmartHomeStore.getState();
-      if (mqttStatus === 'error' || mqttStatus === 'disconnected') {
+
+      // Always attempt to reconnect MQTT on pull refresh for better reliability
+      try {
+        console.log('🔄 Forcing MQTT reconnection check during refresh');
         await connectMqtt();
+      } catch (error) {
+        console.error('MQTT reconnection during refresh failed:', error);
       }
 
       // Add a small delay to show the refresh animation
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     } catch (error) {
       console.error('Refresh failed:', error);
     } finally {
       setRefreshing(false);
+      console.log('✅ Pull to refresh completed');
     }
   };
 
@@ -176,7 +241,12 @@ export default function HomeScreen() {
     if (!networkInfo) return;
 
     // If on external network but using local broker, suggest switching to cloud
-    if (!networkInfo.isLocalNetwork && currentBroker === 'local') {
+    // But only if MQTT is connected and broker detection has completed
+    if (
+      !networkInfo.isLocalNetwork &&
+      currentBroker === 'local' &&
+      mqttConnected
+    ) {
       try {
         const { switchMqttBroker } = useSmartHomeStore.getState();
         const success = await switchMqttBroker('cloud');
@@ -198,15 +268,103 @@ export default function HomeScreen() {
     return ICON_MAP[iconName as keyof typeof ICON_MAP] || Home;
   };
 
+  // Loading overlay component
+  const LoadingOverlay = () => (
+    <View style={styles.loadingOverlay}>
+      <View style={styles.loadingBackdrop} />
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingSpinnerContainer}>
+          <View style={styles.loadingSpinner}>
+            <Text style={styles.loadingEmoji}>🏠</Text>
+          </View>
+          <View style={styles.loadingPulse} />
+        </View>
+
+        <View style={styles.loadingContent}>
+          <Text style={styles.loadingTitle}>Smart Home</Text>
+          <Text style={styles.loadingSubtitle}>
+            {!isNetworkDetectionReady || !networkInfo
+              ? 'Detecting network...'
+              : mqttStatus === 'connecting'
+              ? 'Establishing connection...'
+              : 'Initializing devices...'}
+          </Text>
+
+          <View style={styles.loadingProgress}>
+            <View style={styles.loadingProgressBar}>
+              <View
+                style={[
+                  styles.loadingProgressFill,
+                  {
+                    width: `${
+                      !isNetworkDetectionReady || !networkInfo
+                        ? 33
+                        : mqttStatus === 'connecting'
+                        ? 66
+                        : 100
+                    }%`,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.loadingStatus}>
+            {!isNetworkDetectionReady || !networkInfo
+              ? 'Step 1/3'
+              : mqttStatus === 'connecting'
+              ? 'Step 2/3'
+              : 'Step 3/3'}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
   // Network and broker indicator
   const getBrokerIndicator = () => {
-    if (!networkInfo) return null;
+    if (!isNetworkDetectionReady || !networkInfo) {
+      // Show loading state when network detection is not ready yet
+      return (
+        <View style={styles.brokerIndicator}>
+          <View
+            style={[styles.connectionStatus, { backgroundColor: '#f59e0b' }]}
+          />
+          <View style={styles.brokerInfo}>
+            <Text style={styles.brokerTitle}>Detecting Network...</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // Show loading state while MQTT is connecting and broker detection is happening
+    if (
+      mqttStatus === 'connecting' ||
+      mqttStatus === 'disconnected' ||
+      refreshing
+    ) {
+      return (
+        <View style={styles.brokerIndicator}>
+          <Animated.View
+            style={[
+              styles.connectionStatus,
+              {
+                backgroundColor: refreshing ? '#3b82f6' : '#f59e0b',
+                transform: [{ scale: refreshing ? pulseAnimation : 1 }],
+              },
+            ]}
+          />
+          <View style={styles.brokerInfo}>
+            <Text style={styles.brokerTitle}>
+              {refreshing ? 'Refreshing...' : 'Detecting Broker...'}
+            </Text>
+          </View>
+        </View>
+      );
+    }
 
     const isLocalNetwork = networkInfo.isLocalNetwork;
-    const brokerColor = currentBroker === 'local' ? '#22c55e' : '#3b82f6';
-    const brokerIcon = currentBroker === 'local' ? '🏠' : '☁️';
     const brokerText = currentBroker === 'local' ? 'Local' : 'Cloud';
-    const networkText = isLocalNetwork ? 'Home Network' : 'External Network';
 
     // Show fallback indicator if we're on external network but using local broker
     const showFallbackWarning = !isLocalNetwork && currentBroker === 'local';
@@ -254,7 +412,7 @@ export default function HomeScreen() {
             onRefresh={onRefresh}
             colors={['#2563eb']}
             tintColor="#2563eb"
-            title="Refreshing..."
+            title={mqttConnected ? 'Refreshing...' : 'Reconnecting...'}
             titleColor="#2563eb"
           />
         }
@@ -419,6 +577,9 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Loading Overlay Popup */}
+      {!mqttConnected && <LoadingOverlay />}
 
       <AddRoomModal
         visible={isAddRoomModalVisible}
@@ -682,5 +843,117 @@ const styles = StyleSheet.create({
   brokerIndicatorTouchable: {
     marginHorizontal: 20,
     marginBottom: 20,
+  },
+
+  // Enhanced Loading Overlay Popup Styles
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+  },
+  loadingContainer: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#334155',
+    minWidth: 320,
+    maxWidth: '85%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  loadingSpinnerContainer: {
+    position: 'relative',
+    marginBottom: 24,
+  },
+  loadingSpinner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#2563eb',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  loadingPulse: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 44,
+    backgroundColor: 'rgba(37, 99, 235, 0.3)',
+  },
+  loadingEmoji: {
+    fontSize: 32,
+    color: 'white',
+  },
+  loadingContent: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  loadingTitle: {
+    fontSize: 22,
+    fontFamily: 'Inter-Bold',
+    color: 'white',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  loadingSubtitle: {
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  loadingProgress: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  loadingProgressBar: {
+    height: 4,
+    backgroundColor: '#334155',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  loadingProgressFill: {
+    height: '100%',
+    backgroundColor: '#2563eb',
+    borderRadius: 2,
+  },
+  loadingStatus: {
+    fontSize: 13,
+    fontFamily: 'Inter-Medium',
+    color: '#64748b',
+    textAlign: 'center',
   },
 });

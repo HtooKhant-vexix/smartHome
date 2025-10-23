@@ -71,7 +71,7 @@ export default function DeviceSetupScreen() {
   const [step, setStep] = useState<'device-info' | 'wifi-setup'>('device-info');
   const [name, setName] = useState('');
   const [selectedType, setSelectedType] = useState<DeviceType>('smart-light');
-  const [roomId, setRoomId] = useState<string>(params.roomId as string);
+  const [roomId] = useState<string>(params.roomId as string);
 
   // WiFi Setup States
   const [ssid, setSsid] = useState('');
@@ -98,7 +98,7 @@ export default function DeviceSetupScreen() {
   });
   const [sendingDeviceId, setSendingDeviceId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [configuredDevices, setConfiguredDevices] = useState<
+  const [configuredDevices] = useState<
     ConfiguredDevice[]
   >([]);
 
@@ -107,7 +107,7 @@ export default function DeviceSetupScreen() {
       initializeBluetooth();
     }
     loadConfiguredDevices();
-  }, [step]);
+  }, [step, initializeBluetooth, loadConfiguredDevices]);
 
   const initializeBluetooth = async () => {
     try {
@@ -354,7 +354,7 @@ export default function DeviceSetupScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [startScan]);
 
   const renderDeviceInfoStep = () => (
     <View style={styles.stepContainer}>
@@ -425,47 +425,6 @@ export default function DeviceSetupScreen() {
     </View>
   );
 
-  const renderConfiguredDevices = () => (
-    <View style={styles.configuredDevicesCard}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Configured Devices</Text>
-      </View>
-      {configuredDevices.length > 0 ? (
-        <View style={styles.configuredDevicesList}>
-          {configuredDevices.map((device) => {
-            const DeviceIcon = deviceIcons[device.type] || Bluetooth;
-            return (
-              <View key={device.id} style={styles.configuredDeviceItem}>
-                <View style={styles.deviceIcon}>
-                  <DeviceIcon size={24} color="#2563eb" />
-                </View>
-                <View style={styles.deviceDetails}>
-                  <Text style={styles.deviceName}>{device.name}</Text>
-                  <Text style={styles.deviceInfo}>
-                    Type: {device.type.replace('smart-', '').toUpperCase()}
-                  </Text>
-                  <Text style={styles.deviceInfo}>
-                    SSID: {device.wifiConfig.ssid}
-                  </Text>
-                  <Text style={styles.deviceInfo}>
-                    Last Connected:{' '}
-                    {new Date(device.lastConnected).toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={styles.noDevices}>
-          <Text style={styles.noDevicesText}>No configured devices</Text>
-          <Text style={styles.noDevicesSubtext}>
-            Configure a device to see it here
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 
   const renderWifiSetupStep = () => (
     <View style={styles.stepContainer}>
