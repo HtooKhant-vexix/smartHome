@@ -240,6 +240,14 @@ export class NetworkDetector {
     console.log(
       `🔍 Network detection: SSID="${ssid}", IP="${ipAddress}", isSameSubnet=${isSameSubnet}, isLocalSSID=${isLocalSSID}, isLikelyLocal=${isLikelyLocalNetwork}, isIOSLocal=${isIOSLocalNetwork}`
     );
+    console.log(`🔍 Local SSID check:`, {
+      ssid,
+      localSSIDs,
+      matches: localSSIDs.map((localSSID) => ({
+        localSSID,
+        match: ssid && ssid.toLowerCase().includes(localSSID.toLowerCase()),
+      })),
+    });
 
     return (
       isSameSubnet || isLocalSSID || isLikelyLocalNetwork || isIOSLocalNetwork

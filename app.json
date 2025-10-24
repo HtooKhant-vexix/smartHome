@@ -10,21 +10,19 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.htoo_khant002.boltexponativewind",
+      "bundleIdentifier": "test",
       "buildNumber": "1",
+      "deploymentTarget": "13.4",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to smart home devices and configure them.",
-        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to smart home devices and configure them.",
         "NSCameraUsageDescription": "This app uses the camera to scan QR codes for device setup.",
         "NSLocationWhenInUseUsageDescription": "This app uses location services to detect your local network for smart home device configuration.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location services to detect your local network for smart home device configuration.",
         "NSLocalNetworkUsageDescription": "This app needs access to your local network to communicate with smart home devices.",
         "NSMicrophoneUsageDescription": "This app may use the microphone for voice control features.",
         "UIBackgroundModes": [
-          "bluetooth-central",
-          "bluetooth-peripheral",
           "background-processing"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "web": {
@@ -37,32 +35,15 @@
       "expo-font",
       "expo-web-browser",
       [
-        "react-native-ble-plx",
-        {
-          "isBackgroundEnabled": true,
-          "modes": [
-            "peripheral",
-            "central"
-          ],
-          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to use bluetooth"
-        }
-      ],
-      [
         "react-native-permissions",
         {
           "iosPermissions": [
-            "BLUETOOTH_PERIPHERAL",
-            "BLUETOOTH_SCAN",
-            "BLUETOOTH_CONNECT",
             "CAMERA",
             "LOCATION_WHEN_IN_USE",
             "LOCATION_ALWAYS",
             "LOCAL_NETWORK"
           ],
           "androidPermissions": [
-            "android.permission.BLUETOOTH_SCAN",
-            "android.permission.BLUETOOTH_CONNECT",
-            "android.permission.BLUETOOTH_ADVERTISE",
             "android.permission.CAMERA",
             "android.permission.ACCESS_FINE_LOCATION",
             "android.permission.ACCESS_COARSE_LOCATION",
@@ -79,6 +60,12 @@
     },
     "android": {
       "package": "com.htoo_khant002.boltexponativewind"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "beb609cd-dc65-4872-9880-35bddf44b29b"
+      }
     }
   }
 }
