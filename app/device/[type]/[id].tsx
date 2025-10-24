@@ -441,7 +441,7 @@ export default function DeviceDetailScreen() {
   });
   // helpers to map current detail page device to MQTT devices
   const getMqttDeviceKey = () => {
-    // Aircon uses a completely different MQTT structure (room1/ac/cmnd/*)
+    // Aircon uses a completely different MQTT structure (local/room1/ac/cmnd/*)
     // It doesn't use the light_control topics at all
     if (deviceType === 'smart-ac') {
       return null; // Aircon doesn't use these MQTT keys

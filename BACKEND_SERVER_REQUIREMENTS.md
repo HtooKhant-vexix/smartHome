@@ -163,9 +163,9 @@ DELETE /api/schedules/:id            // Delete schedule
 ```javascript
 // Device Control Topics
 const TOPIC_BASE = {
-  location: 'room1', // Can be dynamic per room
+  location: 'local/room1', // Can be dynamic per room
   controller: 'light_control',
-  acBase: 'room1/ac',
+  acBase: 'local/room1/ac',
 };
 
 // Switch Control Topics
@@ -472,4 +472,3 @@ interface ErrorResponse {
 - Complete user journey from registration to device control
 - Multi-device scenarios
 - Error handling and recovery
-

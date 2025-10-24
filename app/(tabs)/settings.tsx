@@ -36,8 +36,37 @@ import {
   Network,
   Server,
 } from 'lucide-react-native';
-import { bluetoothService } from '../../services/bluetooth';
-import { Device } from 'react-native-ble-plx';
+// Safe import for bluetooth service
+let bluetoothService: any;
+let Device: any;
+
+try {
+  const bluetoothModule = require('../../services/bluetooth');
+  bluetoothService = bluetoothModule.bluetoothService;
+  const bleModule = require('react-native-ble-plx');
+  Device = bleModule.Device;
+} catch (error) {
+  console.warn('Bluetooth service not available:', error);
+  // Mock bluetooth service for Expo Go
+  bluetoothService = {
+    requestPermissions: () => Promise.resolve(false),
+    startScan: () => Promise.resolve(),
+    stopScan: () => {},
+    connectToDevice: () => Promise.resolve(false),
+    disconnectDevice: () => Promise.resolve(),
+    disconnectAllDevices: () => Promise.resolve(),
+    getConnectedDevices: () => [],
+    isDeviceConnected: () => false,
+    getState: () => Promise.resolve('Unknown'),
+    isDeviceConnecting: () => false,
+    getConnectionRetries: () => 0,
+    getDiscoveredDevices: () => [],
+    sendData: () => Promise.resolve(false),
+    readData: () => Promise.resolve(null),
+    monitorCharacteristic: () => Promise.resolve(() => {}),
+  };
+  Device = class MockDevice {};
+}
 import { CustomAlert } from '../../components/CustomAlert';
 // Paho no longer needed here; use centralized mqttService
 import { useRouter } from 'expo-router';
@@ -437,8 +466,8 @@ export default function SettingsScreen() {
   const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(
     null
   );
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [connectedDevices, setConnectedDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [connectedDevices, setConnectedDevices] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [alert, setAlert] = useState<{
     visible: boolean;
@@ -458,7 +487,7 @@ export default function SettingsScreen() {
   const [mqttStatus, setMqttStatus] = useState<
     'disconnected' | 'connecting' | 'connected'
   >('disconnected');
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<any | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [wifiConfig, setWifiConfig] = useState({
     ssid: '',
@@ -669,7 +698,7 @@ export default function SettingsScreen() {
     setAlert((prev) => ({ ...prev, visible: false }));
   };
 
-  const connectToDevice = async (device: Device) => {
+  const connectToDevice = async (device: any) => {
     try {
       setConnectingDeviceId(device.id);
       const connected = await bluetoothService.connectToDevice(device.id);
@@ -797,7 +826,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleDevicePress = (device: Device) => {
+  const handleDevicePress = (device: any) => {
     console.log('Device pressed:', device.id);
     setSelectedDevice(device);
     setIsModalVisible(true);

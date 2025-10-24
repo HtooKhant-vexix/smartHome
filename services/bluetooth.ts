@@ -1,22 +1,62 @@
-import {
-  BleManager,
-  Device,
-  State,
-  Characteristic,
-} from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
-import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { Buffer } from 'buffer';
 
+// Safe import for react-native-ble-plx
+let BleManager: any, Device: any, State: any, Characteristic: any;
+
+try {
+  const bleModule = require('react-native-ble-plx');
+  BleManager = bleModule.BleManager;
+  Device = bleModule.Device;
+  State = bleModule.State;
+  Characteristic = bleModule.Characteristic;
+} catch (error) {
+  console.warn('react-native-ble-plx not available:', error);
+  // Fallback values for Expo Go
+  BleManager = class MockBleManager {
+    constructor() {}
+    async state() {
+      return 'Unknown';
+    }
+    async startDeviceScan() {}
+    stopDeviceScan() {}
+    async connectToDevice() {
+      return null;
+    }
+    async cancelDeviceConnection() {}
+  };
+  Device = class MockDevice {};
+  State = 'Unknown';
+  Characteristic = class MockCharacteristic {};
+}
+
+// Safe import for react-native-permissions
+let request: any, PERMISSIONS: any, RESULTS: any, check: any;
+
+try {
+  const permissionsModule = require('react-native-permissions');
+  request = permissionsModule.request;
+  PERMISSIONS = permissionsModule.PERMISSIONS;
+  RESULTS = permissionsModule.RESULTS;
+  check = permissionsModule.check;
+} catch (error) {
+  console.warn('react-native-permissions not available:', error);
+  // Fallback values
+  request = () => Promise.resolve('unavailable');
+  PERMISSIONS = { IOS: {}, ANDROID: {} };
+  RESULTS = { GRANTED: 'granted' };
+  check = () => Promise.resolve('unavailable');
+}
+
 interface WriteCharacteristic {
-  device: Device;
+  device: any;
   serviceUUID: string;
   characteristicUUID: string;
   withResponse: boolean;
 }
 
 interface ReadCharacteristic {
-  device: Device;
+  device: any;
   serviceUUID: string;
   characteristicUUID: string;
 }
@@ -32,14 +72,14 @@ interface WifiConfigData {
 }
 
 class BluetoothService {
-  private bleManager: BleManager;
-  private connectedDevices: Map<string, Device> = new Map();
+  private bleManager: any;
+  private connectedDevices: Map<string, any> = new Map();
   private isConnecting: Map<string, boolean> = new Map();
   private connectionRetries: Map<string, number> = new Map();
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 2000; // 2 seconds
   private isScanning: boolean = false;
-  private devices: Map<string, Device> = new Map();
+  private devices: Map<string, any> = new Map();
   private writeCharacteristics: Map<string, WriteCharacteristic> = new Map();
   private readCharacteristics: Map<string, ReadCharacteristic> = new Map();
 
@@ -55,60 +95,95 @@ class BluetoothService {
   }
 
   async requestPermissions(): Promise<boolean> {
-    if (Platform.OS === 'android') {
-      const apiLevel = parseInt(Platform.Version.toString(), 10);
+    try {
+      if (Platform.OS === 'android') {
+        const apiLevel = parseInt(Platform.Version.toString(), 10);
 
-      if (apiLevel < 31) {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        const result = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        ]);
+        if (apiLevel < 31) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+          );
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
+        } else {
+          const result = await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          ]);
 
-        return (
-          result['android.permission.BLUETOOTH_SCAN'] ===
-            PermissionsAndroid.RESULTS.GRANTED &&
-          result['android.permission.BLUETOOTH_CONNECT'] ===
-            PermissionsAndroid.RESULTS.GRANTED &&
-          result['android.permission.ACCESS_FINE_LOCATION'] ===
-            PermissionsAndroid.RESULTS.GRANTED
-        );
+          return (
+            result['android.permission.BLUETOOTH_SCAN'] ===
+              PermissionsAndroid.RESULTS.GRANTED &&
+            result['android.permission.BLUETOOTH_CONNECT'] ===
+              PermissionsAndroid.RESULTS.GRANTED &&
+            result['android.permission.ACCESS_FINE_LOCATION'] ===
+              PermissionsAndroid.RESULTS.GRANTED
+          );
+        }
+      } else if (Platform.OS === 'ios') {
+        try {
+          // Check if permissions module is available
+          if (!PERMISSIONS.IOS || !PERMISSIONS.IOS.BLUETOOTH_SCAN) {
+            console.warn(
+              'iOS permissions module not properly loaded, skipping permission requests'
+            );
+            return true; // Allow the app to continue without permissions for now
+          }
+
+          // Check current permission status first
+          const bluetoothScanStatus = await check(
+            PERMISSIONS.IOS.BLUETOOTH_SCAN
+          );
+          const bluetoothConnectStatus = await check(
+            PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL
+          );
+          const locationStatus = await check(
+            PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+          );
+
+          console.log('Current iOS Permission Status:', {
+            bluetoothScan: bluetoothScanStatus,
+            bluetoothConnect: bluetoothConnectStatus,
+            location: locationStatus,
+          });
+
+          // Request permissions if not already granted
+          const bluetoothScanResult =
+            bluetoothScanStatus === RESULTS.GRANTED
+              ? bluetoothScanStatus
+              : await request(PERMISSIONS.IOS.BLUETOOTH_SCAN);
+
+          const bluetoothConnectResult =
+            bluetoothConnectStatus === RESULTS.GRANTED
+              ? bluetoothConnectStatus
+              : await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
+
+          const locationResult =
+            locationStatus === RESULTS.GRANTED
+              ? locationStatus
+              : await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
+
+          console.log('iOS Permission Results:', {
+            bluetoothScan: bluetoothScanResult,
+            bluetoothConnect: bluetoothConnectResult,
+            location: locationResult,
+          });
+
+          return (
+            bluetoothScanResult === RESULTS.GRANTED &&
+            bluetoothConnectResult === RESULTS.GRANTED &&
+            locationResult === RESULTS.GRANTED
+          );
+        } catch (error) {
+          console.error('Error requesting iOS permissions:', error);
+          return false;
+        }
       }
-    } else if (Platform.OS === 'ios') {
-      try {
-        // Request iOS Bluetooth permissions
-        const bluetoothScanResult = await request(
-          PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL
-        );
-        const bluetoothConnectResult = await request(
-          PERMISSIONS.IOS.BLUETOOTH_SCAN
-        );
-        const locationResult = await request(
-          PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
-        );
-
-        console.log('iOS Permission Results:', {
-          bluetoothScan: bluetoothScanResult,
-          bluetoothConnect: bluetoothConnectResult,
-          location: locationResult,
-        });
-
-        return (
-          bluetoothScanResult === RESULTS.GRANTED &&
-          bluetoothConnectResult === RESULTS.GRANTED &&
-          locationResult === RESULTS.GRANTED
-        );
-      } catch (error) {
-        console.error('Error requesting iOS permissions:', error);
-        return false;
-      }
+      return true;
+    } catch (error) {
+      console.error('Error in requestPermissions:', error);
+      return false;
     }
-    return true;
   }
 
   async startScan(): Promise<void> {
@@ -152,7 +227,7 @@ class BluetoothService {
     }
   }
 
-  private async discoverCharacteristics(device: Device): Promise<{
+  private async discoverCharacteristics(device: any): Promise<{
     write: WriteCharacteristic | null;
     read: ReadCharacteristic | null;
   }> {
@@ -366,7 +441,7 @@ class BluetoothService {
     this.readCharacteristics.clear();
   }
 
-  getConnectedDevices(): Device[] {
+  getConnectedDevices(): any[] {
     return Array.from(this.connectedDevices.values());
   }
 
@@ -374,7 +449,7 @@ class BluetoothService {
     return this.connectedDevices.has(deviceId);
   }
 
-  async getState(): Promise<State> {
+  async getState(): Promise<any> {
     return await this.bleManager.state();
   }
 
@@ -386,7 +461,7 @@ class BluetoothService {
     return this.connectionRetries.get(deviceId) || 0;
   }
 
-  getDiscoveredDevices(): Device[] {
+  getDiscoveredDevices(): any[] {
     return Array.from(this.devices.values());
   }
 
