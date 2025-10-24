@@ -637,15 +637,23 @@ function createService(
     console.log(
       `📶 Network info: ${connectedSsid} (isLocal: ${isLocalNetwork})`
     );
-
     // Additional check: if SSID contains known local network indicators
-    const isLikelyLocalNetwork = connectedSsid
-      .toLowerCase()
-      .includes('pos_server_old');
+    const isLikelyLocalNetwork =
+      connectedSsid.toLowerCase().includes('pos_server_old') ||
+      connectedSsid.toLowerCase().includes('pos_server');
 
     // Also check IP address patterns for local networks
     const isLikelyLocalByIP =
-      networkInfo?.ipAddress?.startsWith('192.168.0.100');
+      networkInfo?.ipAddress?.startsWith('192.168.0.') ||
+      networkInfo?.ipAddress === '192.168.0.100';
+
+    console.log(`🔍 Network detection details:`, {
+      ssid: connectedSsid,
+      ipAddress: networkInfo?.ipAddress,
+      isLocalNetwork,
+      isLikelyLocalNetwork,
+      isLikelyLocalByIP,
+    });
 
     if (isLocalNetwork || isLikelyLocalNetwork || isLikelyLocalByIP) {
       // On local network - prioritize local broker first, cloud as fallback
@@ -1308,6 +1316,20 @@ function createService(
       emitter.off(event, listener as any);
       return api as any;
     },
+    // Force switch to local broker (for debugging)
+    forceLocalBroker: async () => {
+      console.log('🔧 Forcing switch to local broker...');
+      return await switchToBroker('local');
+    },
+    // Force switch to cloud broker (for debugging)
+    forceCloudBroker: async () => {
+      console.log('🔧 Forcing switch to cloud broker...');
+      return await switchToBroker('cloud');
+    },
+    // Get current broker type
+    getCurrentBroker: () => currentBroker,
+    // Get network info for debugging
+    getNetworkInfo: () => networkDetector.getCurrentNetwork(),
   };
 
   return api;
