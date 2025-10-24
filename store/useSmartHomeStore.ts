@@ -172,7 +172,7 @@ const DEVICE_KEYS = [
   'socket_switch',
   'rgb_light',
 ] as const;
-const AC_BASE_TOPIC = 'room1/ac';
+const AC_BASE_TOPIC = 'local/room1/ac';
 
 // Create the store
 export const useSmartHomeStore = create<SmartHomeState>()(

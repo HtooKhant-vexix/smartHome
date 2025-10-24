@@ -8,13 +8,13 @@ export const topics: Record<string, number> = {
 };
 
 // Centralized topic helpers for MQTT scheme
-// Bridge configuration: topic room1/# out 1 and topic cloud/room1/# in 1
-// This means local broker uses room1/... and cloud broker uses cloud/room1/...
+// Bridge configuration: topic local/room1/# out 1 and topic cloud/room1/# in 1
+// This means local broker uses local/room1/... and cloud broker uses cloud/room1/...
 export const TOPIC_BASE = {
-  location: 'room1',
+  location: 'local/room1',
   cloudLocation: 'cloud/room1',
   controller: 'light_control',
-  acBase: 'room1/ac',
+  acBase: 'local/room1/ac',
 } as const;
 
 export const topicHelpers = {
