@@ -8,6 +8,7 @@ import {
   BrokerConfigurations,
 } from '../services/mqttService';
 import { networkDetector, NetworkInfo } from '../utils/networkDetection';
+import { STORAGE_KEY } from '@env';
 import { topicHelpers } from '../constants/topicTable';
 import { DeviceType, Device } from '../constants/defaultData';
 
@@ -736,7 +737,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
       },
     }),
     {
-      name: 'smart-home-storage',
+      name: STORAGE_KEY,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         rooms: state.rooms,

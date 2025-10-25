@@ -1,6 +1,22 @@
 import Paho from 'paho-mqtt';
 import { EventEmitter } from 'eventemitter3';
 import { networkDetector } from '../utils/networkDetection';
+import {
+  LOCAL_MQTT_HOST,
+  LOCAL_MQTT_PORT,
+  LOCAL_MQTT_USERNAME,
+  LOCAL_MQTT_PASSWORD,
+  LOCAL_MQTT_CLIENT_ID_PREFIX,
+  LOCAL_MQTT_USE_SSL,
+  LOCAL_MQTT_KEEP_ALIVE,
+  CLOUD_MQTT_HOST,
+  CLOUD_MQTT_PORT,
+  CLOUD_MQTT_USERNAME,
+  CLOUD_MQTT_PASSWORD,
+  CLOUD_MQTT_CLIENT_ID_PREFIX,
+  CLOUD_MQTT_USE_SSL,
+  CLOUD_MQTT_KEEP_ALIVE,
+} from '@env';
 
 // MQTT Broker Types
 export type BrokerType = 'local' | 'cloud';
@@ -28,30 +44,50 @@ export interface BrokerConfigurations {
 // Broker Configurations
 const BROKER_CONFIGS: BrokerConfigurations = {
   local: {
-    host: '192.168.0.100', // Local broker with bridge
-    port: 9001, // MQTT port (listener 1883)
-    clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
-    username: 'detpos',
-    password: 'asdffdsa',
-    useSSL: false, // Local broker typically doesn't use SSL
-    keepAlive: 30, // Reduced for better mobile connectivity
+    host: LOCAL_MQTT_HOST,
+    port: parseInt(LOCAL_MQTT_PORT, 10),
+    clientId: `${LOCAL_MQTT_CLIENT_ID_PREFIX}-${Math.random()
+      .toString(16)
+      .substr(2, 8)}`,
+    username: LOCAL_MQTT_USERNAME,
+    password: LOCAL_MQTT_PASSWORD,
+    useSSL: LOCAL_MQTT_USE_SSL === 'true',
+    keepAlive: parseInt(LOCAL_MQTT_KEEP_ALIVE, 10),
     cleanSession: true,
     type: 'local',
   },
   cloud: {
-    host: 'f6ce8c16ab1f4b958a2179d249d62bf3.s2.eu.hivemq.cloud',
-    port: 8884, // MQTT over SSL (matches bridge config)
-    clientId: `smart-home-${Math.random().toString(16).substr(2, 8)}`,
-    username: 'smart',
-    password: 'Asdffdsa-4580',
-    useSSL: true,
-    keepAlive: 30, // Reduced for better mobile connectivity
+    host: CLOUD_MQTT_HOST,
+    port: parseInt(CLOUD_MQTT_PORT, 10),
+    clientId: `${CLOUD_MQTT_CLIENT_ID_PREFIX}-${Math.random()
+      .toString(16)
+      .substr(2, 8)}`,
+    username: CLOUD_MQTT_USERNAME,
+    password: CLOUD_MQTT_PASSWORD,
+    useSSL: CLOUD_MQTT_USE_SSL === 'true',
+    keepAlive: parseInt(CLOUD_MQTT_KEEP_ALIVE, 10),
     cleanSession: true,
     type: 'cloud',
   },
   current: 'local', // Default to local, will be switched based on availability
 };
 
+console.log('....................................');
+console.log('LOCAL_MQTT_HOST', LOCAL_MQTT_HOST);
+console.log('LOCAL_MQTT_PORT', LOCAL_MQTT_PORT);
+console.log('LOCAL_MQTT_USERNAME', LOCAL_MQTT_USERNAME);
+console.log('LOCAL_MQTT_PASSWORD', LOCAL_MQTT_PASSWORD);
+console.log('LOCAL_MQTT_CLIENT_ID_PREFIX', LOCAL_MQTT_CLIENT_ID_PREFIX);
+console.log('LOCAL_MQTT_USE_SSL', LOCAL_MQTT_USE_SSL);
+console.log('LOCAL_MQTT_KEEP_ALIVE', LOCAL_MQTT_KEEP_ALIVE);
+console.log('CLOUD_MQTT_HOST', CLOUD_MQTT_HOST);
+console.log('CLOUD_MQTT_PORT', CLOUD_MQTT_PORT);
+console.log('CLOUD_MQTT_USERNAME', CLOUD_MQTT_USERNAME);
+console.log('CLOUD_MQTT_PASSWORD', CLOUD_MQTT_PASSWORD);
+console.log('CLOUD_MQTT_CLIENT_ID_PREFIX', CLOUD_MQTT_CLIENT_ID_PREFIX);
+console.log('CLOUD_MQTT_USE_SSL', CLOUD_MQTT_USE_SSL);
+console.log('CLOUD_MQTT_KEEP_ALIVE', CLOUD_MQTT_KEEP_ALIVE);
+console.log('....................................');
 // Default MQTT Configuration (for backward compatibility)
 const DEFAULT_MQTT_CONFIG: MqttConfig = { ...BROKER_CONFIGS.local };
 
@@ -830,7 +866,6 @@ function createService(
       }
     },
     switchToBroker,
-    getCurrentBroker: () => currentBroker,
     getStatus: () => status,
     isConnected,
     testConnection: async (host?: string, port?: number) => {

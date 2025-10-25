@@ -1,3 +1,10 @@
+import {
+  TOPIC_BASE_LOCATION,
+  TOPIC_BASE_CLOUD_LOCATION,
+  TOPIC_CONTROLLER,
+  TOPIC_AC_BASE,
+} from '@env';
+
 export const topics: Record<string, number> = {
   'relay/1': 0x0001,
   'sensor/temp': 0x0002,
@@ -11,10 +18,10 @@ export const topics: Record<string, number> = {
 // Bridge configuration: topic local/room1/# out 1 and topic cloud/room1/# in 1
 // This means local broker uses local/room1/... and cloud broker uses cloud/room1/...
 export const TOPIC_BASE = {
-  location: 'local/room1',
-  cloudLocation: 'cloud/room1',
-  controller: 'light_control',
-  acBase: 'local/room1/ac',
+  location: TOPIC_BASE_LOCATION,
+  cloudLocation: TOPIC_BASE_CLOUD_LOCATION,
+  controller: TOPIC_CONTROLLER,
+  acBase: TOPIC_AC_BASE,
 } as const;
 
 export const topicHelpers = {
