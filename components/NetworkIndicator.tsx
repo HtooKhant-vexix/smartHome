@@ -10,7 +10,7 @@ interface NetworkIndicatorProps {
 export const NetworkIndicator: React.FC<NetworkIndicatorProps> = ({
   style,
 }) => {
-  const { getNetworkInfo, isOnLocalNetwork } = useSmartHomeStore();
+  const { getNetworkInfo } = useSmartHomeStore();
   const networkInfo = getNetworkInfo();
 
   if (!networkInfo) {

@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
-  ActivityIndicator,
   TextInput,
   Modal,
-  Dimensions,
   PanResponder,
   Animated,
 } from 'react-native';
@@ -24,11 +21,8 @@ import {
   Sliders,
   Battery,
   Wifi,
-  WifiOff,
   Wind,
-  Send,
   Sun,
-  Moon,
   Timer,
   Zap,
   X,
@@ -47,40 +41,9 @@ import {
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { topicHelpers } from '../../../constants/topicTable';
 import { CustomAlert } from '../../../components/CustomAlert';
-import { NetworkIndicator } from '../../../components/NetworkIndicator';
 import { networkDetector, NetworkInfo } from '../../../utils/networkDetection';
-import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 // Use centralized topic helpers
-// MQTT topic scheme config for switches
-const MQTT_LOCATION = 'room1';
-const MQTT_CONTROLLER = 'light_control';
-// AC controller follows mqttApi.md base topic and cmnd/stat/tele groups
 const AC_BASE_TOPIC = 'room1/ac';
-
-interface ControlItemProps {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-  unit?: string;
-}
-
-const ControlItem = ({ icon: Icon, label, value, unit }: ControlItemProps) => {
-  return (
-    <View style={styles.controlItem}>
-      <View style={styles.controlIcon}>
-        <Icon size={20} color="#2563eb" />
-      </View>
-      <View style={styles.controlInfo}>
-        <Text style={styles.controlLabel}>{label}</Text>
-        <Text style={styles.controlValue}>
-          {value}
-          {unit && <Text style={styles.controlUnit}> {unit}</Text>}
-        </Text>
-      </View>
-    </View>
-  );
-};
 
 export default function DeviceDetailScreen() {
   const router = useRouter();
@@ -88,23 +51,25 @@ export default function DeviceDetailScreen() {
   const deviceType = type as DeviceType;
   const deviceId = id as string;
 
-  const deviceTitle = getDeviceTitle(deviceType);
-
   // Get device details from store
   const rooms = useSmartHomeStore((state) => state.rooms);
-  const currentDevice = rooms
-    .flatMap((room) =>
-      Object.entries(room.devices).flatMap(([type, devices]) =>
-        devices.map((device) => ({
-          ...device,
-          type: type as DeviceType,
-          roomId: room.id,
-        }))
+  const currentDevice = useMemo(() => {
+    return rooms
+      .flatMap((room) =>
+        Object.entries(room.devices).flatMap(([type, devices]) =>
+          devices.map((device) => ({
+            ...device,
+            type: type as DeviceType,
+            roomId: room.id,
+          }))
+        )
       )
-    )
-    .find((device) => device.id === deviceId && device.type === deviceType);
+      .find((device) => device.id === deviceId && device.type === deviceType);
+  }, [rooms, deviceId, deviceType]);
 
-  const deviceName = currentDevice?.name || 'Unknown Device';
+  const deviceName = useMemo(() => {
+    return currentDevice?.name || 'Unknown Device';
+  }, [currentDevice?.name]);
 
   const [isActive, setIsActive] = useState(currentDevice?.isActive || false);
   const [brightness, setBrightness] = useState<number>(
@@ -151,9 +116,9 @@ export default function DeviceDetailScreen() {
       setSwingLeftRight(settings.swingH || false);
       setAcOnline(settings.online || false);
       setAcLastSeen(settings.lastSeen || '');
-      setAcPower(currentDevice.isActive || false);
+      // Remove redundant setAcPower call - it's handled by the store sync useEffect above
     }
-  }, [deviceType, currentDevice?.acSettings, currentDevice?.isActive]);
+  }, [deviceType, currentDevice]);
 
   // Also sync with store AC state changes for real-time updates
   const storeAcState = useSmartHomeStore((state) => {
@@ -203,8 +168,10 @@ export default function DeviceDetailScreen() {
   const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
   const switchMqttBroker = useSmartHomeStore((state) => state.switchMqttBroker);
 
-  // Loading state for MQTT initialization
+  // Loading state for MQTT initialization with better state management
   const [mqttInitializing, setMqttInitializing] = useState(false);
+  const [lastMqttInitTime, setLastMqttInitTime] = useState(0);
+  const MQTT_INIT_COOLDOWN = 5000; // 5 second cooldown between initialization attempts
   const setAcPowerStore = useSmartHomeStore((state) => state.setAcPower);
   const setAcTemperatureStore = useSmartHomeStore(
     (state) => state.setAcTemperature
@@ -256,9 +223,113 @@ export default function DeviceDetailScreen() {
     message: '',
   });
 
-  // Previous network state for comparison
+  // Previous network state for comparison with debouncing
   const [previousNetworkInfo, setPreviousNetworkInfo] =
     useState<NetworkInfo | null>(null);
+  const [networkChangeTimeout, setNetworkChangeTimeout] =
+    useState<NodeJS.Timeout | null>(null);
+  const NETWORK_CHANGE_DEBOUNCE = 2000; // 2 second debounce for network changes
+
+  // Process network changes with intelligent broker switching
+  const processNetworkChange = async (networkInfo: NetworkInfo) => {
+    // Only show notifications for significant changes
+    if (!previousNetworkInfo) {
+      setPreviousNetworkInfo(networkInfo);
+
+      // Show initial network status if we're on external network with local broker
+      if (
+        networkInfo.isConnected &&
+        !networkInfo.isLocalNetwork &&
+        currentBroker === 'local'
+      ) {
+        setTimeout(() => {
+          setConnectionLossAlert({
+            visible: true,
+            title: 'External Network Detected',
+            message:
+              "You're on an external network but connected to the local broker. Would you like to switch to the cloud broker for better connectivity?",
+          });
+        }, 3000); // Show after 3 seconds to let UI load
+      }
+      return;
+    }
+
+    const wasConnected = previousNetworkInfo.isConnected;
+    const isConnected = networkInfo.isConnected;
+    const wasLocal = previousNetworkInfo.isLocalNetwork;
+    const isLocal = networkInfo.isLocalNetwork;
+
+    // Connection lost notification
+    if (wasConnected && !isConnected) {
+      setNetworkChangeAlert({
+        visible: true,
+        title: 'Connection Lost',
+        message:
+          'Network connection has been lost. Device control may be unavailable.',
+        type: 'error',
+      });
+    }
+    // Connection restored notification
+    else if (!wasConnected && isConnected) {
+      setNetworkChangeAlert({
+        visible: true,
+        title: 'Connection Restored',
+        message: `Connected to ${isLocal ? 'home' : 'external'} network.`,
+        type: 'success',
+      });
+
+      // If connection restored and we're on external network but using local broker, suggest switch
+      if (isLocal === false && currentBroker === 'local' && mqttConnected) {
+        setTimeout(() => {
+          setConnectionLossAlert({
+            visible: true,
+            title: 'Switch to Cloud Broker?',
+            message:
+              "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
+          });
+        }, 2000);
+      }
+    }
+    // Network type changed (local <-> external) - only process if significant
+    else if (wasConnected && isConnected && wasLocal !== isLocal) {
+      // Only process if the change is meaningful and we're not in the middle of MQTT operations
+      if (mqttStatus !== 'connecting' && mqttStatus !== 'switching') {
+        setNetworkChangeAlert({
+          visible: true,
+          title: 'Network Changed',
+          message: `Switched to ${isLocal ? 'home' : 'external'} network.`,
+          type: 'info',
+        });
+
+        // Intelligent broker switching based on network type and current MQTT state
+        if (
+          wasLocal &&
+          !isLocal &&
+          currentBroker === 'local' &&
+          mqttConnected
+        ) {
+          // Moved from local to external network - only suggest switch if MQTT is working well
+          // Don't automatically switch as it might cause unnecessary reconnections
+          setTimeout(() => {
+            setConnectionLossAlert({
+              visible: true,
+              title: 'Switch to Cloud Broker?',
+              message:
+                "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
+            });
+          }, 3000); // Longer delay to not overwhelm user
+        } else if (!wasLocal && isLocal && currentBroker === 'cloud') {
+          // Moved from external to local network - could suggest switching back to local
+          // But only if local broker is available and working
+          console.log(
+            'Moved back to local network, considering broker switch...'
+          );
+        }
+      }
+    }
+
+    setPreviousNetworkInfo(networkInfo);
+  };
   const [showBrightnessModal, setShowBrightnessModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showPowerModal, setShowPowerModal] = useState(false);
@@ -370,7 +441,7 @@ export default function DeviceDetailScreen() {
   });
   // helpers to map current detail page device to MQTT devices
   const getMqttDeviceKey = () => {
-    // Aircon uses a completely different MQTT structure (room1/ac/cmnd/*)
+    // Aircon uses a completely different MQTT structure (local/room1/ac/cmnd/*)
     // It doesn't use the light_control topics at all
     if (deviceType === 'smart-ac') {
       return null; // Aircon doesn't use these MQTT keys
@@ -534,20 +605,35 @@ export default function DeviceDetailScreen() {
   // Initialize MQTT when component mounts
   useEffect(() => {
     const initializeMqttConnection = async () => {
-      if (mqttInitializing) return; // Prevent multiple initialization attempts
+      const now = Date.now();
+
+      // Prevent multiple rapid initialization attempts
+      if (mqttInitializing || now - lastMqttInitTime < MQTT_INIT_COOLDOWN) {
+        console.log(
+          'MQTT initialization blocked - cooling down or already initializing'
+        );
+        return;
+      }
 
       setMqttInitializing(true);
+      setLastMqttInitTime(now);
+
       try {
         console.log('Initializing MQTT in detail page...', {
           mqttStatus,
           mqttConnected,
+          currentBroker,
         });
 
         // Initialize MQTT service (this sets up subscriptions and event listeners)
         await initializeMqtt();
 
-        // Connect to MQTT if not already connected
-        if (!mqttConnected && mqttStatus !== 'connecting') {
+        // Only attempt connection if we're not already connected/ing and not in error state
+        if (
+          !mqttConnected &&
+          mqttStatus !== 'connecting' &&
+          mqttStatus !== 'connected'
+        ) {
           console.log('Connecting to MQTT in detail page...');
           await connectMqtt();
         }
@@ -566,15 +652,15 @@ export default function DeviceDetailScreen() {
       }
     };
 
-    // Initialize MQTT when component mounts or when MQTT status changes to disconnected/error
+    // Only initialize if MQTT is in a state that requires initialization
+    // and we haven't tried recently
     if (
-      mqttStatus === 'disconnected' ||
-      mqttStatus === 'error' ||
-      !mqttConnected
+      (mqttStatus === 'disconnected' || mqttStatus === 'error') &&
+      !mqttInitializing
     ) {
       initializeMqttConnection();
     }
-  }, [mqttStatus, mqttConnected]); // Re-run when MQTT status changes
+  }, [mqttStatus, mqttConnected, currentBroker]); // Re-run when MQTT status changes
 
   // Network change monitoring and notifications
   useEffect(() => {
@@ -586,87 +672,19 @@ export default function DeviceDetailScreen() {
         const initialNetworkInfo = await networkDetector.getNetworkInfo();
         setPreviousNetworkInfo(initialNetworkInfo);
 
-        // Set up network change listener
+        // Set up network change listener with debouncing
         unsubscribeNetwork = networkDetector.addNetworkListener(
           (networkInfo) => {
-            // Only show notifications for significant changes
-            if (!previousNetworkInfo) {
-              setPreviousNetworkInfo(networkInfo);
-
-              // Show initial network status if we're on external network with local broker
-              if (
-                networkInfo.isConnected &&
-                !networkInfo.isLocalNetwork &&
-                currentBroker === 'local'
-              ) {
-                setTimeout(() => {
-                  setConnectionLossAlert({
-                    visible: true,
-                    title: 'External Network Detected',
-                    message:
-                      "You're on an external network but connected to the local broker. Would you like to switch to the cloud broker for better connectivity?",
-                  });
-                }, 3000); // Show after 3 seconds to let UI load
-              }
-              return;
+            // Clear existing timeout
+            if (networkChangeTimeout) {
+              clearTimeout(networkChangeTimeout);
             }
 
-            const wasConnected = previousNetworkInfo.isConnected;
-            const isConnected = networkInfo.isConnected;
-            const wasLocal = previousNetworkInfo.isLocalNetwork;
-            const isLocal = networkInfo.isLocalNetwork;
-
-            // Connection lost notification
-            if (wasConnected && !isConnected) {
-              setNetworkChangeAlert({
-                visible: true,
-                title: 'Connection Lost',
-                message:
-                  'Network connection has been lost. Device control may be unavailable.',
-                type: 'error',
-              });
-            }
-            // Connection restored notification
-            else if (!wasConnected && isConnected) {
-              setNetworkChangeAlert({
-                visible: true,
-                title: 'Connection Restored',
-                message: `Connected to ${
-                  isLocal ? 'home' : 'external'
-                } network.`,
-                type: 'success',
-              });
-            }
-            // Network type changed (local <-> external)
-            else if (wasConnected && isConnected && wasLocal !== isLocal) {
-              setNetworkChangeAlert({
-                visible: true,
-                title: 'Network Changed',
-                message: `Switched to ${
-                  isLocal ? 'home' : 'external'
-                } network.`,
-                type: 'info',
-              });
-
-              // If switched from local to external, suggest switching to cloud
-              if (
-                wasLocal &&
-                !isLocal &&
-                mqttConnected &&
-                currentBroker === 'local'
-              ) {
-                setTimeout(() => {
-                  setConnectionLossAlert({
-                    visible: true,
-                    title: 'Switch to Cloud Broker?',
-                    message:
-                      "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
-                  });
-                }, 2000); // Show after 2 seconds to not overwhelm user
-              }
-            }
-
-            setPreviousNetworkInfo(networkInfo);
+            // Set new timeout for debounced processing
+            const timeout = setTimeout(() => {
+              processNetworkChange(networkInfo);
+            }, NETWORK_CHANGE_DEBOUNCE);
+            setNetworkChangeTimeout(timeout);
           }
         );
       } catch (error) {
@@ -681,8 +699,11 @@ export default function DeviceDetailScreen() {
       if (unsubscribeNetwork) {
         unsubscribeNetwork();
       }
+      if (networkChangeTimeout) {
+        clearTimeout(networkChangeTimeout);
+      }
     };
-  }, [previousNetworkInfo, mqttConnected, currentBroker]);
+  }, [previousNetworkInfo, mqttConnected, currentBroker, mqttStatus]);
 
   // Handle MQTT status changes
   useEffect(() => {

@@ -1,4 +1,11 @@
 import NetInfo from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
+import {
+  LOCAL_BROKER_IP,
+  LOCAL_NETWORK_SSIDS,
+  LOCAL_NETWORK_SUBNETS,
+  DEBUG_NETWORK,
+} from '@env';
 
 export interface NetworkInfo {
   isConnected: boolean;
@@ -195,12 +202,12 @@ export class NetworkDetector {
   private isLocalNetwork(ipAddress?: string, ssid?: string): boolean {
     if (!ipAddress) return false;
 
-    // Check if IP is in the same subnet as the MQTT broker (192.168.0.x)
-    const brokerIP = '192.168.0.100';
+    // Check if IP is in the same subnet as the MQTT broker
+    const brokerIP = LOCAL_BROKER_IP;
     const isSameSubnet = this.isSameSubnet(ipAddress, brokerIP);
 
-    // Check if SSID indicates local network (you can customize this)
-    const localSSIDs = ['YourHomeWiFi', 'HomeNetwork', 'SmartHome']; // Add your actual SSIDs
+    // Check if SSID indicates local network (from environment)
+    const localSSIDs = LOCAL_NETWORK_SSIDS.split(',').map((s) => s.trim());
     const isLocalSSID = Boolean(
       ssid &&
         localSSIDs.some((localSSID) =>
@@ -208,7 +215,55 @@ export class NetworkDetector {
         )
     );
 
-    return isSameSubnet || isLocalSSID;
+    // Check for common local network IP patterns (from environment)
+    const localSubnets = LOCAL_NETWORK_SUBNETS.split(',').map((s) => s.trim());
+    const isLocalIP = localSubnets.some((subnet) =>
+      ipAddress.startsWith(subnet)
+    );
+
+    // Additional check for common local network patterns
+    const isLikelyLocalNetwork = Boolean(
+      ssid &&
+        (ssid.toLowerCase().includes('pos') ||
+          ssid.toLowerCase().includes('server') ||
+          ssid.toLowerCase().includes('office') ||
+          ssid.toLowerCase().includes('work') ||
+          ipAddress?.startsWith('192.168.') ||
+          ipAddress?.startsWith('10.') ||
+          ipAddress?.startsWith('172.'))
+    );
+
+    // iOS-specific network detection
+    const isIOSLocalNetwork =
+      Platform.OS === 'ios' &&
+      Boolean(
+        ipAddress?.startsWith('192.168.') ||
+          ipAddress?.startsWith('10.') ||
+          ipAddress?.startsWith('172.') ||
+          (ssid && ssid.toLowerCase().includes('pos'))
+      );
+
+    if (DEBUG_NETWORK === 'true') {
+      console.log(
+        `🔍 Network detection: SSID="${ssid}", IP="${ipAddress}", isSameSubnet=${isSameSubnet}, isLocalSSID=${isLocalSSID}, isLocalIP=${isLocalIP}, isLikelyLocal=${isLikelyLocalNetwork}, isIOSLocal=${isIOSLocalNetwork}`
+      );
+      console.log(`🔍 Local SSID check:`, {
+        ssid,
+        localSSIDs,
+        matches: localSSIDs.map((localSSID) => ({
+          localSSID,
+          match: ssid && ssid.toLowerCase().includes(localSSID.toLowerCase()),
+        })),
+      });
+    }
+
+    return (
+      isSameSubnet ||
+      isLocalSSID ||
+      isLocalIP ||
+      isLikelyLocalNetwork ||
+      isIOSLocalNetwork
+    );
   }
 
   private isSameSubnet(ip1: string, ip2: string): boolean {

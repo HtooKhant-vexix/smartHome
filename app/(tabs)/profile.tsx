@@ -13,8 +13,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   CreditCard as Edit3,
   MapPin,
-  Calendar,
-  Award,
   Leaf,
   Zap,
   Chrome as Home,
@@ -27,7 +25,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   value: string;
   label: string;
-  color: string[];
+  color: [string, string, ...string[]];
 }
 
 function StatCard({ icon, value, label, color }: StatCardProps) {
@@ -103,9 +101,7 @@ export default function ProfileScreen() {
           <View style={styles.profileHeader}>
             <View style={styles.avatarContainer}>
               <Image
-                source={{
-                  uri: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
-                }}
+                source={require('../../assets/images/pfp.jpg')}
                 style={styles.avatar}
               />
               <View style={styles.onlineIndicator} />
