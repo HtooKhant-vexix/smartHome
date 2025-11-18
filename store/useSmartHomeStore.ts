@@ -8,9 +8,11 @@ import {
   BrokerConfigurations,
 } from '../services/mqttService';
 import { networkDetector, NetworkInfo } from '../utils/networkDetection';
-import { STORAGE_KEY } from '@env';
 import { topicHelpers } from '../constants/topicTable';
 import { DeviceType, Device } from '../constants/defaultData';
+import { appConfig } from '../config/env';
+
+const STORAGE_KEY = appConfig.storageKey;
 
 // Types
 export interface Room {

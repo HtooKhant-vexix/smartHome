@@ -17,6 +17,11 @@ This project uses environment variables to manage sensitive configuration data l
 
 ## Environment Variables
 
+> **Expo Router Compatibility:** Expo CLI only exposes variables prefixed with
+> `EXPO_PUBLIC_`. Define each key below in your `.env` as
+> `EXPO_PUBLIC_<KEY>` (for example, `EXPO_PUBLIC_LOCAL_MQTT_HOST`). The app
+> automatically strips the prefix when reading values.
+
 ### MQTT Configuration
 
 #### Local MQTT Broker

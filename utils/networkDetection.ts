@@ -1,11 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
 import { Platform } from 'react-native';
-import {
-  LOCAL_BROKER_IP,
-  LOCAL_NETWORK_SSIDS,
-  LOCAL_NETWORK_SUBNETS,
-  DEBUG_NETWORK,
-} from '@env';
+import { networkConfig, debugConfig } from '../config/env';
 
 export interface NetworkInfo {
   isConnected: boolean;
@@ -203,11 +198,11 @@ export class NetworkDetector {
     if (!ipAddress) return false;
 
     // Check if IP is in the same subnet as the MQTT broker
-    const brokerIP = LOCAL_BROKER_IP;
+    const brokerIP = networkConfig.localBrokerIP;
     const isSameSubnet = this.isSameSubnet(ipAddress, brokerIP);
 
     // Check if SSID indicates local network (from environment)
-    const localSSIDs = LOCAL_NETWORK_SSIDS.split(',').map((s) => s.trim());
+    const localSSIDs = networkConfig.localNetworkSSIDs;
     const isLocalSSID = Boolean(
       ssid &&
         localSSIDs.some((localSSID) =>
@@ -216,7 +211,7 @@ export class NetworkDetector {
     );
 
     // Check for common local network IP patterns (from environment)
-    const localSubnets = LOCAL_NETWORK_SUBNETS.split(',').map((s) => s.trim());
+    const localSubnets = networkConfig.localNetworkSubnets;
     const isLocalIP = localSubnets.some((subnet) =>
       ipAddress.startsWith(subnet)
     );
@@ -243,7 +238,7 @@ export class NetworkDetector {
           (ssid && ssid.toLowerCase().includes('pos'))
       );
 
-    if (DEBUG_NETWORK === 'true') {
+    if (debugConfig.network) {
       console.log(
         `🔍 Network detection: SSID="${ssid}", IP="${ipAddress}", isSameSubnet=${isSameSubnet}, isLocalSSID=${isLocalSSID}, isLocalIP=${isLocalIP}, isLikelyLocal=${isLikelyLocalNetwork}, isIOSLocal=${isIOSLocalNetwork}`
       );

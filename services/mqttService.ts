@@ -1,22 +1,7 @@
 import Paho from 'paho-mqtt';
 import { EventEmitter } from 'eventemitter3';
-import { networkDetector } from '../utils/networkDetection';
-import {
-  LOCAL_MQTT_HOST,
-  LOCAL_MQTT_PORT,
-  LOCAL_MQTT_USERNAME,
-  LOCAL_MQTT_PASSWORD,
-  LOCAL_MQTT_CLIENT_ID_PREFIX,
-  LOCAL_MQTT_USE_SSL,
-  LOCAL_MQTT_KEEP_ALIVE,
-  CLOUD_MQTT_HOST,
-  CLOUD_MQTT_PORT,
-  CLOUD_MQTT_USERNAME,
-  CLOUD_MQTT_PASSWORD,
-  CLOUD_MQTT_CLIENT_ID_PREFIX,
-  CLOUD_MQTT_USE_SSL,
-  CLOUD_MQTT_KEEP_ALIVE,
-} from '@env';
+import { networkDetector, NetworkInfo } from '../utils/networkDetection';
+import { mqttConfig } from '../config/env';
 
 // MQTT Broker Types
 export type BrokerType = 'local' | 'cloud';
@@ -42,30 +27,29 @@ export interface BrokerConfigurations {
 }
 
 // Broker Configurations
+const createClientId = (prefix: string) =>
+  `${prefix}-${Math.random().toString(16).substr(2, 8)}`;
+
 const BROKER_CONFIGS: BrokerConfigurations = {
   local: {
-    host: LOCAL_MQTT_HOST,
-    port: parseInt(LOCAL_MQTT_PORT, 10),
-    clientId: `${LOCAL_MQTT_CLIENT_ID_PREFIX}-${Math.random()
-      .toString(16)
-      .substr(2, 8)}`,
-    username: LOCAL_MQTT_USERNAME,
-    password: LOCAL_MQTT_PASSWORD,
-    useSSL: LOCAL_MQTT_USE_SSL === 'true',
-    keepAlive: parseInt(LOCAL_MQTT_KEEP_ALIVE, 10),
+    host: mqttConfig.local.host,
+    port: mqttConfig.local.port,
+    clientId: createClientId(mqttConfig.local.clientIdPrefix),
+    username: mqttConfig.local.username,
+    password: mqttConfig.local.password,
+    useSSL: mqttConfig.local.useSSL,
+    keepAlive: mqttConfig.local.keepAlive,
     cleanSession: true,
     type: 'local',
   },
   cloud: {
-    host: CLOUD_MQTT_HOST,
-    port: parseInt(CLOUD_MQTT_PORT, 10),
-    clientId: `${CLOUD_MQTT_CLIENT_ID_PREFIX}-${Math.random()
-      .toString(16)
-      .substr(2, 8)}`,
-    username: CLOUD_MQTT_USERNAME,
-    password: CLOUD_MQTT_PASSWORD,
-    useSSL: CLOUD_MQTT_USE_SSL === 'true',
-    keepAlive: parseInt(CLOUD_MQTT_KEEP_ALIVE, 10),
+    host: mqttConfig.cloud.host,
+    port: mqttConfig.cloud.port,
+    clientId: createClientId(mqttConfig.cloud.clientIdPrefix),
+    username: mqttConfig.cloud.username,
+    password: mqttConfig.cloud.password,
+    useSSL: mqttConfig.cloud.useSSL,
+    keepAlive: mqttConfig.cloud.keepAlive,
     cleanSession: true,
     type: 'cloud',
   },
@@ -73,20 +57,20 @@ const BROKER_CONFIGS: BrokerConfigurations = {
 };
 
 console.log('....................................');
-console.log('LOCAL_MQTT_HOST', LOCAL_MQTT_HOST);
-console.log('LOCAL_MQTT_PORT', LOCAL_MQTT_PORT);
-console.log('LOCAL_MQTT_USERNAME', LOCAL_MQTT_USERNAME);
-console.log('LOCAL_MQTT_PASSWORD', LOCAL_MQTT_PASSWORD);
-console.log('LOCAL_MQTT_CLIENT_ID_PREFIX', LOCAL_MQTT_CLIENT_ID_PREFIX);
-console.log('LOCAL_MQTT_USE_SSL', LOCAL_MQTT_USE_SSL);
-console.log('LOCAL_MQTT_KEEP_ALIVE', LOCAL_MQTT_KEEP_ALIVE);
-console.log('CLOUD_MQTT_HOST', CLOUD_MQTT_HOST);
-console.log('CLOUD_MQTT_PORT', CLOUD_MQTT_PORT);
-console.log('CLOUD_MQTT_USERNAME', CLOUD_MQTT_USERNAME);
-console.log('CLOUD_MQTT_PASSWORD', CLOUD_MQTT_PASSWORD);
-console.log('CLOUD_MQTT_CLIENT_ID_PREFIX', CLOUD_MQTT_CLIENT_ID_PREFIX);
-console.log('CLOUD_MQTT_USE_SSL', CLOUD_MQTT_USE_SSL);
-console.log('CLOUD_MQTT_KEEP_ALIVE', CLOUD_MQTT_KEEP_ALIVE);
+console.log('LOCAL_MQTT_HOST', mqttConfig.local.host);
+console.log('LOCAL_MQTT_PORT', mqttConfig.local.port);
+console.log('LOCAL_MQTT_USERNAME', mqttConfig.local.username);
+console.log('LOCAL_MQTT_PASSWORD', mqttConfig.local.password);
+console.log('LOCAL_MQTT_CLIENT_ID_PREFIX', mqttConfig.local.clientIdPrefix);
+console.log('LOCAL_MQTT_USE_SSL', mqttConfig.local.useSSL);
+console.log('LOCAL_MQTT_KEEP_ALIVE', mqttConfig.local.keepAlive);
+console.log('CLOUD_MQTT_HOST', mqttConfig.cloud.host);
+console.log('CLOUD_MQTT_PORT', mqttConfig.cloud.port);
+console.log('CLOUD_MQTT_USERNAME', mqttConfig.cloud.username);
+console.log('CLOUD_MQTT_PASSWORD', mqttConfig.cloud.password);
+console.log('CLOUD_MQTT_CLIENT_ID_PREFIX', mqttConfig.cloud.clientIdPrefix);
+console.log('CLOUD_MQTT_USE_SSL', mqttConfig.cloud.useSSL);
+console.log('CLOUD_MQTT_KEEP_ALIVE', mqttConfig.cloud.keepAlive);
 console.log('....................................');
 // Default MQTT Configuration (for backward compatibility)
 const DEFAULT_MQTT_CONFIG: MqttConfig = { ...BROKER_CONFIGS.local };
@@ -205,6 +189,9 @@ export interface MqttServiceAPI {
     event: E,
     listener: MqttServiceEvents[E]
   ): this;
+  forceLocalBroker(): Promise<boolean>;
+  forceCloudBroker(): Promise<boolean>;
+  getNetworkInfo(): NetworkInfo | null;
 }
 
 // Circuit Breaker Configuration
@@ -507,6 +494,21 @@ function createService(
           },
           onFailure: (error) => {
             clearTimeout(timeoutId);
+            // Log full error details for debugging
+            const errorDetails: any = error;
+            console.error(
+              `❌ Broker test failed - Full error details for ${brokerType}:`,
+              {
+                errorMessage: errorDetails?.errorMessage || String(error),
+                errorCode: errorDetails?.errorCode,
+                invocationContext: errorDetails?.invocationContext,
+                broker: brokerType,
+                host: brokerConfig.host,
+                port: brokerConfig.port,
+                useSSL: brokerConfig.useSSL,
+                fullError: error,
+              }
+            );
             const mqttError = classifyMqttError(error, brokerType);
             logMqttEvent('warn', 'Broker test failed', {
               brokerType,
@@ -517,8 +519,8 @@ function createService(
             updateCircuitBreaker(brokerType, false);
             resolve(false);
           },
-          userName: brokerConfig.username,
-          password: brokerConfig.password,
+          ...(brokerConfig.username && { userName: brokerConfig.username }),
+          ...(brokerConfig.password && { password: brokerConfig.password }),
           useSSL: brokerConfig.useSSL,
           cleanSession: true,
         };
@@ -984,6 +986,17 @@ function createService(
               resolve(true);
             },
             onFailure: (error: Paho.ErrorWithInvocationContext) => {
+              // Log full error details for debugging
+              console.error('❌ MQTT Connection failed - Full error details:', {
+                errorMessage: error.errorMessage,
+                errorCode: error.errorCode,
+                invocationContext: error.invocationContext,
+                broker: currentBroker,
+                host: config.host,
+                port: config.port,
+                useSSL: config.useSSL,
+                fullError: error,
+              });
               const mqttError = classifyMqttError(error, currentBroker);
               console.error('❌ MQTT Connection failed:', mqttError);
 
@@ -1055,8 +1068,8 @@ function createService(
                 )
               );
             },
-            userName: config.username,
-            password: config.password,
+            ...(config.username && { userName: config.username }),
+            ...(config.password && { password: config.password }),
             useSSL: config.useSSL || false,
             keepAliveInterval: config.keepAlive || 30, // Reduced for better mobile connectivity
             cleanSession: config.cleanSession || true,
