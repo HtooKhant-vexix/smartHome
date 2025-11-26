@@ -144,25 +144,22 @@ export default function RoomDetailScreen() {
                 </TouchableOpacity>
 
                 {visibleDevices.map((device, idx) => (
-                  <TouchableOpacity
+                  <DeviceItem
                     key={device.id}
+                    title={device.name}
+                    icon={deviceIcons[deviceType as DeviceType]}
+                    isActive={device.isActive}
                     onPress={() =>
                       handleDevicePress(deviceType as DeviceType, device.id)
                     }
-                  >
-                    <DeviceItem
-                      title={device.name}
-                      icon={deviceIcons[deviceType as DeviceType]}
-                      isActive={device.isActive}
-                      onToggle={() =>
-                        handleToggleDevice(
-                          deviceType as DeviceType,
-                          device.id,
-                          idx
-                        )
-                      }
-                    />
-                  </TouchableOpacity>
+                    onToggle={() =>
+                      handleToggleDevice(
+                        deviceType as DeviceType,
+                        device.id,
+                        idx
+                      )
+                    }
+                  />
                 ))}
               </View>
             );

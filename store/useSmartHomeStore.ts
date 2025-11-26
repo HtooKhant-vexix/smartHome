@@ -41,7 +41,15 @@ interface SmartHomeState {
   
   // HA Actions
   toggleDevice: (roomId: string, deviceType: DeviceType, deviceId: string) => void;
+  
+  // AC Actions
+  setAcPower: (value: boolean) => void;
   setAcTemperature: (temp: number) => void;
+  setAcMode: (mode: string) => void;
+  setAcFanSpeed: (speed: string) => void;
+  setAcSwing: (axis: 'UD' | 'LR', value: boolean) => void;
+
+  // Light Actions
   // Light Actions
   setLightBrightness: (deviceId: string, brightness: number) => void;
   setLightColor: (deviceId: string, rgb: [number, number, number]) => void;
@@ -164,7 +172,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           const device: Device = {
             id: entity.entity_id,
             name: entity.attributes.friendly_name || entity.entity_id,
-            isActive: entity.state === 'on',
+            isActive: domain === 'climate' ? entity.state !== 'off' : entity.state === 'on',
             // Store raw entity data if needed later
           };
 
@@ -282,8 +290,21 @@ export const useSmartHomeStore = create<SmartHomeState>()(
         });
       },
       setAcTemperature: (temp) => {
-        // Placeholder for AC control
+        // Optimistic update would go here if we had the deviceId in the action
+        // For now just logging as the original code did, or we can update if we change the signature
         console.log('Set AC Temp:', temp);
+      },
+      setAcPower: (value) => {
+        console.log('Set AC Power:', value);
+      },
+      setAcMode: (mode) => {
+        console.log('Set AC Mode:', mode);
+      },
+      setAcFanSpeed: (speed) => {
+        console.log('Set AC Fan Speed:', speed);
+      },
+      setAcSwing: (axis, value) => {
+        console.log('Set AC Swing:', axis, value);
       },
 
     }),
