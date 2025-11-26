@@ -104,7 +104,7 @@ const DeviceCard = ({
   );
 };
 
-export default function HomeScreen() {
+const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState<'rooms' | 'devices'>('rooms');
   const [isAddRoomModalVisible, setIsAddRoomModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -136,10 +136,9 @@ export default function HomeScreen() {
 
   // Use Zustand store
   const rooms = useSmartHomeStore((state) => state.rooms);
-  const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
-  const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
-  const currentBroker = useSmartHomeStore((state) => state.mqtt.currentBroker);
-  const sensorData = useSmartHomeStore((state) => state.sensorData);
+  const isConnected = useSmartHomeStore((state) => state.isConnected);
+  const visibleDeviceIds = useSmartHomeStore((state) => state.visibleDeviceIds);
+  // const sensorData = useSmartHomeStore((state) => state.sensorData); // Sensor data not yet implemented in new store
 
   // Network information
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
@@ -147,19 +146,15 @@ export default function HomeScreen() {
   // Loading state for initial network detection
   const [isNetworkDetectionReady, setIsNetworkDetectionReady] = useState(false);
 
-  // Debug logging for broker changes
+  // Debug logging
   React.useEffect(() => {
-    console.log('🔄 Broker indicator updated:', {
-      currentBroker,
-      mqttConnected,
-      mqttStatus,
+    console.log('🔄 Connection indicator updated:', {
+      isConnected,
       networkInfo: networkInfo?.ssid,
       isNetworkDetectionReady,
     });
   }, [
-    currentBroker,
-    mqttConnected,
-    mqttStatus,
+    isConnected,
     networkInfo,
     isNetworkDetectionReady,
   ]);
@@ -211,19 +206,17 @@ export default function HomeScreen() {
         console.log('✅ Network info updated during refresh:', info);
       } catch (error) {
         console.error('Failed to update network info during refresh:', error);
-        // Still set ready state to prevent infinite loading
-        setIsNetworkDetectionReady(true);
       }
 
-      // Force MQTT reconnection and broker re-detection
-      const { connectMqtt } = useSmartHomeStore.getState();
+      // Force HA reconnection
+      const { initializeSmartHome } = useSmartHomeStore.getState();
 
-      // Always attempt to reconnect MQTT on pull refresh for better reliability
+      // Always attempt to reconnect on pull refresh
       try {
-        console.log('🔄 Forcing MQTT reconnection check during refresh');
-        await connectMqtt();
+        console.log('🔄 Forcing HA reconnection check during refresh');
+        await initializeSmartHome();
       } catch (error) {
-        console.error('MQTT reconnection during refresh failed:', error);
+        console.error('HA reconnection during refresh failed:', error);
       }
 
       // Add a small delay to show the refresh animation
@@ -238,30 +231,8 @@ export default function HomeScreen() {
 
   // Handle broker indicator tap
   const handleBrokerIndicatorTap = async () => {
-    if (!networkInfo) return;
-
-    // If on external network but using local broker, suggest switching to cloud
-    // But only if MQTT is connected and broker detection has completed
-    if (
-      !networkInfo.isLocalNetwork &&
-      currentBroker === 'local' &&
-      mqttConnected
-    ) {
-      try {
-        const { switchMqttBroker } = useSmartHomeStore.getState();
-        const success = await switchMqttBroker('cloud');
-        if (success) {
-          console.log('Successfully switched to cloud broker');
-        } else {
-          console.error('Failed to switch to cloud broker');
-        }
-      } catch (error) {
-        console.error('Error switching broker:', error);
-      }
-    } else {
-      // Otherwise just refresh
+      // Just refresh
       onRefresh();
-    }
   };
 
   const getIconComponent = (iconName: string) => {
@@ -285,8 +256,8 @@ export default function HomeScreen() {
           <Text style={styles.loadingSubtitle}>
             {!isNetworkDetectionReady || !networkInfo
               ? 'Detecting network...'
-              : mqttStatus === 'connecting'
-              ? 'Establishing connection...'
+              : !isConnected
+              ? 'Connecting to Home Assistant...'
               : 'Initializing devices...'}
           </Text>
 
@@ -299,7 +270,7 @@ export default function HomeScreen() {
                     width: `${
                       !isNetworkDetectionReady || !networkInfo
                         ? 33
-                        : mqttStatus === 'connecting'
+                        : !isConnected
                         ? 66
                         : 100
                     }%`,
@@ -312,7 +283,7 @@ export default function HomeScreen() {
           <Text style={styles.loadingStatus}>
             {!isNetworkDetectionReady || !networkInfo
               ? 'Step 1/3'
-              : mqttStatus === 'connecting'
+              : !isConnected
               ? 'Step 2/3'
               : 'Step 3/3'}
           </Text>
@@ -337,12 +308,8 @@ export default function HomeScreen() {
       );
     }
 
-    // Show loading state while MQTT is connecting and broker detection is happening
-    if (
-      mqttStatus === 'connecting' ||
-      mqttStatus === 'disconnected' ||
-      refreshing
-    ) {
+    // Show loading state while connecting
+    if (!isConnected || refreshing) {
       return (
         <View style={styles.brokerIndicator}>
           <Animated.View
@@ -356,47 +323,28 @@ export default function HomeScreen() {
           />
           <View style={styles.brokerInfo}>
             <Text style={styles.brokerTitle}>
-              {refreshing ? 'Refreshing...' : 'Detecting Broker...'}
+              {refreshing ? 'Refreshing...' : 'Connecting to HA...'}
             </Text>
           </View>
         </View>
       );
     }
 
-    const isLocalNetwork = networkInfo.isLocalNetwork;
-    const brokerText = currentBroker === 'local' ? 'Local' : 'Cloud';
-
-    // Show fallback indicator if we're on external network but using local broker
-    const showFallbackWarning = !isLocalNetwork && currentBroker === 'local';
-
     return (
       <View style={styles.brokerIndicator}>
-        {/* <View style={[styles.brokerIcon, { backgroundColor: brokerColor }]}>
-          <Text style={styles.brokerIconText}>{brokerIcon}</Text>
-        </View> */}
         <View
           style={[
             styles.connectionStatus,
             {
-              backgroundColor: mqttConnected ? '#22c55e' : '#ef4444',
+              backgroundColor: isConnected ? '#22c55e' : '#ef4444',
             },
           ]}
         >
-          {/* <Text style={styles.connectionStatusText}> */}
-          {/* {mqttConnected ? 'Connected' : 'Disconnected'} */}
-          {/* </Text> */}
         </View>
         <View style={styles.brokerInfo}>
           <View style={styles.brokerTitleRow}>
-            <Text style={styles.brokerTitle}>{brokerText}</Text>
-            {showFallbackWarning && (
-              <Text style={styles.fallbackIndicator}>⚠️</Text>
-            )}
+            <Text style={styles.brokerTitle}>Home Assistant</Text>
           </View>
-          {/* <Text style={styles.brokerSubtitle}>{networkText}</Text> */}
-          {/* {showFallbackWarning && (
-            <Text style={styles.fallbackText}>Tap to switch to cloud</Text>
-          )} */}
         </View>
       </View>
     );
@@ -412,12 +360,11 @@ export default function HomeScreen() {
             onRefresh={onRefresh}
             colors={['#2563eb']}
             tintColor="#2563eb"
-            title={mqttConnected ? 'Refreshing...' : 'Reconnecting...'}
+            title={isConnected ? 'Refreshing...' : 'Reconnecting...'}
             titleColor="#2563eb"
           />
         }
       >
-        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Sixth Kendra</Text>
@@ -463,11 +410,7 @@ export default function HomeScreen() {
           <View style={styles.weatherStats}>
             <StatCard
               label="Indoor temp"
-              value={
-                sensorData.temperature > 0
-                  ? `${sensorData.temperature.toFixed(1)}° C`
-                  : '--° C'
-              }
+              value="--° C"
               icon={<Thermometer size={16} color="#2563eb" />}
             />
             <StatCard
@@ -524,7 +467,6 @@ export default function HomeScreen() {
           <View style={styles.roomGrid}>
             {rooms.map((room) => (
               <RoomCard
-                data={room}
                 key={room.id}
                 roomId={room.id}
                 icon={getIconComponent(room.icon)}
@@ -536,13 +478,19 @@ export default function HomeScreen() {
             {(Object.keys(deviceIcons) as DeviceType[])
               .map((t) => {
                 const deviceCount = rooms.reduce(
-                  (acc, r) => acc + (r.devices[t]?.length || 0),
+                  (acc, r) =>
+                    acc +
+                    (r.devices[t]?.filter(
+                      (d) => visibleDeviceIds.includes(d.id)
+                    ).length || 0),
                   0
                 );
                 const activeCount = rooms.reduce(
                   (acc, r) =>
                     acc +
-                    (r.devices[t]?.filter((d) => d.isActive)?.length || 0),
+                    (r.devices[t]?.filter(
+                      (d) => d.isActive && visibleDeviceIds.includes(d.id)
+                    )?.length || 0),
                   0
                 );
                 return { t, deviceCount, activeCount };
@@ -567,24 +515,20 @@ export default function HomeScreen() {
             if (activeTab === 'rooms') {
               setIsAddRoomModalVisible(true);
             } else {
-              router.push('/device-setup');
+              router.push('/settings/device-management');
             }
           }}
         >
           <Plus size={24} color="#2563eb" />
           <Text style={styles.addDeviceText}>
-            Add new {activeTab === 'rooms' ? 'room' : 'device'}
+            {activeTab === 'rooms' ? 'Add new room' : 'Add device'}
           </Text>
         </TouchableOpacity>
+        <AddRoomModal
+          visible={isAddRoomModalVisible}
+          onClose={() => setIsAddRoomModalVisible(false)}
+        />
       </ScrollView>
-
-      {/* Loading Overlay Popup */}
-      {!mqttConnected && <LoadingOverlay />}
-
-      <AddRoomModal
-        visible={isAddRoomModalVisible}
-        onClose={() => setIsAddRoomModalVisible(false)}
-      />
     </SafeAreaView>
   );
 }
@@ -957,3 +901,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+export default HomeScreen;

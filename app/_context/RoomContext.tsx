@@ -166,3 +166,4 @@ export const useRooms = () => {
   }
   return context;
 };
+export default RoomProvider;

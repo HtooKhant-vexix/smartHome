@@ -12,6 +12,7 @@ interface RoomCardProps {
 export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
   const router = useRouter();
   const rooms = useSmartHomeStore((state) => state.rooms);
+  const visibleDeviceIds = useSmartHomeStore((state) => state.visibleDeviceIds);
   const room = rooms.find((r) => r.id === roomId);
 
   if (!room) {
@@ -20,10 +21,12 @@ export const RoomCard = ({ roomId, icon: Icon }: RoomCardProps) => {
 
   // Calculate total devices and active devices
   const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>
-    devices.map((device) => ({
-      ...device,
-      type: type as DeviceType,
-    }))
+    devices
+      .filter((device) => visibleDeviceIds.includes(device.id))
+      .map((device) => ({
+        ...device,
+        type: type as DeviceType,
+      }))
   );
 
   const activeDevices = allDevices.filter(
@@ -127,3 +130,4 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
   },
 });
+export default RoomCard;

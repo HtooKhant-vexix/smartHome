@@ -31,6 +31,7 @@ import {
   Save,
   Palette,
   Thermometer,
+  Sparkles,
 } from 'lucide-react-native';
 import {
   deviceIcons,
@@ -39,11 +40,8 @@ import {
   DeviceType,
 } from '../../../constants/defaultData';
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
-import { topicHelpers } from '../../../constants/topicTable';
+import { haService } from '@/services/haService';
 import { CustomAlert } from '../../../components/CustomAlert';
-import { networkDetector, NetworkInfo } from '../../../utils/networkDetection';
-// Use centralized topic helpers
-const AC_BASE_TOPIC = 'room1/ac';
 
 export default function DeviceDetailScreen() {
   const router = useRouter();
@@ -151,6 +149,37 @@ export default function DeviceDetailScreen() {
     }
   }, [deviceType, storeAcState]);
 
+  // Light State Sync
+  const [effect, setEffect] = useState<string>('');
+  const [effectList, setEffectList] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (deviceType === 'smart-light' && currentDevice) {
+      if (currentDevice.brightness !== undefined) {
+        // HA brightness is 0-255, convert to 0-100 for UI if needed, 
+        // but let's assume UI slider handles 0-100 and we map it.
+        // Actually, let's stick to 0-100 for UI and map to 255 for HA.
+        // Wait, HA sends 0-255. UI usually wants %.
+        setBrightness(Math.round((currentDevice.brightness / 255) * 100));
+      }
+      if (currentDevice.rgb_color) {
+        setColor({
+          r: currentDevice.rgb_color[0],
+          g: currentDevice.rgb_color[1],
+          b: currentDevice.rgb_color[2],
+        });
+      }
+      if (currentDevice.effect) {
+        setEffect(currentDevice.effect);
+      }
+      if (currentDevice.effect_list) {
+        setEffectList(currentDevice.effect_list);
+      }
+    }
+  }, [deviceType, currentDevice]);
+
+
+
   const [temperature, setTemperature] = useState(
     defaultDeviceStates.temperature
   );
@@ -158,15 +187,17 @@ export default function DeviceDetailScreen() {
     defaultDeviceStates.batteryLevel
   );
 
-  // Use Zustand store for MQTT
-  const mqttConnected = useSmartHomeStore((state) => state.mqtt.isConnected);
-  const mqttStatus = useSmartHomeStore((state) => state.mqtt.status);
-  const currentBroker = useSmartHomeStore((state) => state.mqtt.currentBroker);
-  const publishMqtt = useSmartHomeStore((state) => state.publishMqtt);
-  const subscribeMqtt = useSmartHomeStore((state) => state.subscribeMqtt);
-  const connectMqtt = useSmartHomeStore((state) => state.connectMqtt);
-  const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
-  const switchMqttBroker = useSmartHomeStore((state) => state.switchMqttBroker);
+  // Use Zustand store
+  const toggleDevice = useSmartHomeStore((state) => state.toggleDevice);
+  const setAcTemperature = useSmartHomeStore((state) => state.setAcTemperature);
+  const isConnected = useSmartHomeStore((state) => state.isConnected);
+
+  const handlePowerToggle = (newState: boolean) => {
+    if (currentDevice) {
+      toggleDevice(currentDevice.roomId, deviceType, currentDevice.id);
+      setIsActive(newState);
+    }
+  };
 
   // Loading state for MQTT initialization with better state management
   const [mqttInitializing, setMqttInitializing] = useState(false);
@@ -185,6 +216,9 @@ export default function DeviceDetailScreen() {
   const setDeviceColorStore = useSmartHomeStore(
     (state) => state.setDeviceColor
   );
+  const setLightBrightness = useSmartHomeStore((state) => state.setLightBrightness);
+  const setLightColor = useSmartHomeStore((state) => state.setLightColor);
+  const setLightEffect = useSmartHomeStore((state) => state.setLightEffect);
 
   const [mqttMessage, setMqttMessage] = useState('');
   const [alert, setAlert] = useState<{
@@ -199,137 +233,15 @@ export default function DeviceDetailScreen() {
     type: 'info',
   });
 
-  // Network change notification state
-  const [networkChangeAlert, setNetworkChangeAlert] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    type: 'success' | 'error' | 'info';
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-    type: 'info',
-  });
-
-  // Connection loss alert with cloud switch confirmation
-  const [connectionLossAlert, setConnectionLossAlert] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-  });
-
-  // Previous network state for comparison with debouncing
-  const [previousNetworkInfo, setPreviousNetworkInfo] =
-    useState<NetworkInfo | null>(null);
-  const [networkChangeTimeout, setNetworkChangeTimeout] =
-    useState<NodeJS.Timeout | null>(null);
-  const NETWORK_CHANGE_DEBOUNCE = 2000; // 2 second debounce for network changes
-
-  // Process network changes with intelligent broker switching
-  const processNetworkChange = async (networkInfo: NetworkInfo) => {
-    // Only show notifications for significant changes
-    if (!previousNetworkInfo) {
-      setPreviousNetworkInfo(networkInfo);
-
-      // Show initial network status if we're on external network with local broker
-      if (
-        networkInfo.isConnected &&
-        !networkInfo.isLocalNetwork &&
-        currentBroker === 'local'
-      ) {
-        setTimeout(() => {
-          setConnectionLossAlert({
-            visible: true,
-            title: 'External Network Detected',
-            message:
-              "You're on an external network but connected to the local broker. Would you like to switch to the cloud broker for better connectivity?",
-          });
-        }, 3000); // Show after 3 seconds to let UI load
-      }
-      return;
-    }
-
-    const wasConnected = previousNetworkInfo.isConnected;
-    const isConnected = networkInfo.isConnected;
-    const wasLocal = previousNetworkInfo.isLocalNetwork;
-    const isLocal = networkInfo.isLocalNetwork;
-
-    // Connection lost notification
-    if (wasConnected && !isConnected) {
-      setNetworkChangeAlert({
-        visible: true,
-        title: 'Connection Lost',
-        message:
-          'Network connection has been lost. Device control may be unavailable.',
-        type: 'error',
-      });
-    }
-    // Connection restored notification
-    else if (!wasConnected && isConnected) {
-      setNetworkChangeAlert({
-        visible: true,
-        title: 'Connection Restored',
-        message: `Connected to ${isLocal ? 'home' : 'external'} network.`,
-        type: 'success',
-      });
-
-      // If connection restored and we're on external network but using local broker, suggest switch
-      if (isLocal === false && currentBroker === 'local' && mqttConnected) {
-        setTimeout(() => {
-          setConnectionLossAlert({
-            visible: true,
-            title: 'Switch to Cloud Broker?',
-            message:
-              "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
-          });
-        }, 2000);
-      }
-    }
-    // Network type changed (local <-> external) - only process if significant
-    else if (wasConnected && isConnected && wasLocal !== isLocal) {
-      // Only process if the change is meaningful and we're not in the middle of MQTT operations
-      if (mqttStatus !== 'connecting' && mqttStatus !== 'switching') {
-        setNetworkChangeAlert({
-          visible: true,
-          title: 'Network Changed',
-          message: `Switched to ${isLocal ? 'home' : 'external'} network.`,
-          type: 'info',
-        });
-
-        // Intelligent broker switching based on network type and current MQTT state
-        if (
-          wasLocal &&
-          !isLocal &&
-          currentBroker === 'local' &&
-          mqttConnected
-        ) {
-          // Moved from local to external network - only suggest switch if MQTT is working well
-          // Don't automatically switch as it might cause unnecessary reconnections
-          setTimeout(() => {
-            setConnectionLossAlert({
-              visible: true,
-              title: 'Switch to Cloud Broker?',
-              message:
-                "You've moved to an external network. Would you like to switch to the cloud broker for better connectivity?",
-            });
-          }, 3000); // Longer delay to not overwhelm user
-        } else if (!wasLocal && isLocal && currentBroker === 'cloud') {
-          // Moved from external to local network - could suggest switching back to local
-          // But only if local broker is available and working
-          console.log(
-            'Moved back to local network, considering broker switch...'
-          );
-        }
-      }
-    }
-
-    setPreviousNetworkInfo(networkInfo);
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info') => {
+    setAlert({ visible: true, title, message, type });
   };
+
+  const hideAlert = () => {
+    setAlert((prev) => ({ ...prev, visible: false }));
+  };
+
+  // Network change processing removed
   const [showBrightnessModal, setShowBrightnessModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showPowerModal, setShowPowerModal] = useState(false);
@@ -380,43 +292,7 @@ export default function DeviceDetailScreen() {
     }).start();
   }, [swingLeftRight]);
 
-  const applyAcState = (data: any) => {
-    if (typeof data !== 'object' || !data) return;
-    setAcLastSeen(new Date().toLocaleString());
-    if (typeof data.power === 'boolean') {
-      setAcPower(data.power as any);
-      setIsActive(data.power as any); // ✅ Sync main toggle with Aircon power
-    }
-    if (typeof data.temperature === 'number') {
-      setAcTemp(Math.max(16, Math.min(30, Math.round(data.temperature))));
-    }
-    if (typeof data.mode === 'number') {
-      const modeMap: Record<number, 'auto' | 'cool' | 'heat' | 'dry' | 'fan'> =
-        {
-          0: 'auto',
-          1: 'cool',
-          2: 'heat',
-          3: 'dry',
-          4: 'fan', // ✅ Added Fan mode per MQTT API docs
-        };
-      setAcMode(modeMap[data.mode] ?? 'auto');
-    }
-    if (typeof data.fan === 'number') {
-      const fanMap: Record<number, 'auto' | 'low' | 'med' | 'high'> = {
-        0: 'auto',
-        1: 'low',
-        2: 'med',
-        3: 'high',
-      };
-      setAcFanSpeed(fanMap[data.fan] ?? 'auto');
-    }
-    if (typeof data.swing_v === 'boolean') {
-      setSwingUpDown(data.swing_v as any);
-    }
-    if (typeof data.swing_h === 'boolean') {
-      setSwingLeftRight(data.swing_h as any);
-    }
-  };
+  // applyAcState removed - state updates via store
 
   // ✅ Removed local AsyncStorage loading - Zustand store handles all persistence
   // AC state is automatically loaded from AsyncStorage by Zustand persist middleware
@@ -439,83 +315,30 @@ export default function DeviceDetailScreen() {
     x: center,
     y: center,
   });
-  // helpers to map current detail page device to MQTT devices
-  const getMqttDeviceKey = () => {
-    // Aircon uses a completely different MQTT structure (local/room1/ac/cmnd/*)
-    // It doesn't use the light_control topics at all
-    if (deviceType === 'smart-ac') {
-      return null; // Aircon doesn't use these MQTT keys
-    }
+  // MQTT helpers removed
 
-    // For smart-light type, map device ID to specific MQTT key
-    if (deviceType === 'smart-light') {
-      const deviceIdToMqttKey: Record<string, string> = {
-        '1': 'light_switch',
-        '2': 'AC_switch', // Auto Current switch (NOT aircon!)
-        '3': 'socket_switch',
-        '4': 'rgb_light',
-      };
-      return (deviceIdToMqttKey[deviceId] || 'light_switch') as any;
-    }
-
-    return 'socket_switch';
-  };
-  const buildTopic = (device: string, action: 'set' | 'state') => {
-    const currentBroker = getCurrentBroker();
-    const useCloud = currentBroker === 'cloud';
-    return action === 'set'
-      ? topicHelpers.switchSet(device as any, useCloud)
-      : topicHelpers.switchState(device as any, useCloud);
-  };
-  const acCmnd = (suffix: string) => {
-    const currentBroker = getCurrentBroker();
-    const useCloud = currentBroker === 'cloud';
-    return topicHelpers.acCmnd(suffix, useCloud);
-  };
-  const acStat = (suffix: string) => {
-    const currentBroker = getCurrentBroker();
-    const useCloud = currentBroker === 'cloud';
-    return topicHelpers.acStat(suffix, useCloud);
-  };
-
-  // Get current broker to determine if we should use cloud topics
-  const getCurrentBroker = () => {
-    return useSmartHomeStore.getState().mqtt.currentBroker;
-  };
-  const publishSet = (device: string, payload: string): boolean => {
-    if (!mqttConnected) {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return false;
-    }
-    return publishMqtt(buildTopic(device, 'set'), payload);
-  };
+  const [showEffectsModal, setShowEffectsModal] = useState(false);
 
   const handleColorChange = (newColor: { r: number; g: number; b: number }) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     setColor(newColor);
-    setDeviceColorStore(newColor.r, newColor.g, newColor.b);
-    // Don't show success alert - just update the UI silently
+    // setDeviceColorStore(newColor.r, newColor.g, newColor.b); // Deprecated
+    setLightColor(deviceId, [newColor.r, newColor.g, newColor.b]);
+  };
+
+  const handleBrightnessChange = (value: number) => {
+    if (!isConnected) return;
+    setBrightness(value);
+    // Convert 0-100 to 0-255
+    setLightBrightness(deviceId, Math.round((value / 100) * 255));
+  };
+
+  const handleEffectChange = (newEffect: string) => {
+    if (!isConnected) return;
+    setEffect(newEffect);
+    setLightEffect(deviceId, newEffect);
+    setShowEffectsModal(false);
   };
 
   const panResponder = useRef(
@@ -530,8 +353,30 @@ export default function DeviceDetailScreen() {
         const { locationX, locationY } = evt.nativeEvent;
         updateColorFromPosition(locationX, locationY);
       },
+      onPanResponderRelease: (evt) => {
+        // Only trigger API call on release to avoid flooding
+        const { locationX, locationY } = evt.nativeEvent;
+        const newColor = getColorFromPosition(locationX, locationY);
+        if (newColor) {
+           handleColorChange(newColor);
+        }
+      }
     })
   ).current;
+
+
+  const getColorFromPosition = (x: number, y: number) => {
+    const dx = x - center;
+    const dy = y - center;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const clampedDistance = Math.min(distance, center);
+    
+    const angle = Math.atan2(dy, dx);
+    const hue = ((angle * 180) / Math.PI + 360) % 360;
+    const saturation = (clampedDistance / center) * 100;
+    
+    return hsvToRgb(hue, saturation, 100);
+  };
 
   const updateColorFromPosition = (x: number, y: number) => {
     // Calculate distance from center
@@ -602,384 +447,30 @@ export default function DeviceDetailScreen() {
     };
   };
 
-  // Initialize MQTT when component mounts
-  useEffect(() => {
-    const initializeMqttConnection = async () => {
-      const now = Date.now();
+  // MQTT initialization removed - handled by HA service in store
 
-      // Prevent multiple rapid initialization attempts
-      if (mqttInitializing || now - lastMqttInitTime < MQTT_INIT_COOLDOWN) {
-        console.log(
-          'MQTT initialization blocked - cooling down or already initializing'
-        );
-        return;
-      }
+  // Network monitoring removed - handled by HA service
 
-      setMqttInitializing(true);
-      setLastMqttInitTime(now);
-
-      try {
-        console.log('Initializing MQTT in detail page...', {
-          mqttStatus,
-          mqttConnected,
-          currentBroker,
-        });
-
-        // Initialize MQTT service (this sets up subscriptions and event listeners)
-        await initializeMqtt();
-
-        // Only attempt connection if we're not already connected/ing and not in error state
-        if (
-          !mqttConnected &&
-          mqttStatus !== 'connecting' &&
-          mqttStatus !== 'connected'
-        ) {
-          console.log('Connecting to MQTT in detail page...');
-          await connectMqtt();
-        }
-      } catch (error) {
-        console.error('Failed to initialize MQTT in detail page:', error);
-        // Show error alert after a delay to avoid rapid fire alerts
-        setTimeout(() => {
-          showAlert(
-            'MQTT Error',
-            'Failed to connect to MQTT broker. Please check your settings.',
-            'error'
-          );
-        }, 1000);
-      } finally {
-        setMqttInitializing(false);
-      }
-    };
-
-    // Only initialize if MQTT is in a state that requires initialization
-    // and we haven't tried recently
-    if (
-      (mqttStatus === 'disconnected' || mqttStatus === 'error') &&
-      !mqttInitializing
-    ) {
-      initializeMqttConnection();
-    }
-  }, [mqttStatus, mqttConnected, currentBroker]); // Re-run when MQTT status changes
-
-  // Network change monitoring and notifications
-  useEffect(() => {
-    let unsubscribeNetwork: (() => void) | null = null;
-
-    const setupNetworkMonitoring = async () => {
-      try {
-        // Get initial network info
-        const initialNetworkInfo = await networkDetector.getNetworkInfo();
-        setPreviousNetworkInfo(initialNetworkInfo);
-
-        // Set up network change listener with debouncing
-        unsubscribeNetwork = networkDetector.addNetworkListener(
-          (networkInfo) => {
-            // Clear existing timeout
-            if (networkChangeTimeout) {
-              clearTimeout(networkChangeTimeout);
-            }
-
-            // Set new timeout for debounced processing
-            const timeout = setTimeout(() => {
-              processNetworkChange(networkInfo);
-            }, NETWORK_CHANGE_DEBOUNCE);
-            setNetworkChangeTimeout(timeout);
-          }
-        );
-      } catch (error) {
-        console.error('Failed to set up network monitoring:', error);
-      }
-    };
-
-    setupNetworkMonitoring();
-
-    // Cleanup function
-    return () => {
-      if (unsubscribeNetwork) {
-        unsubscribeNetwork();
-      }
-      if (networkChangeTimeout) {
-        clearTimeout(networkChangeTimeout);
-      }
-    };
-  }, [previousNetworkInfo, mqttConnected, currentBroker, mqttStatus]);
-
-  // Handle MQTT status changes
-  useEffect(() => {
-    console.log(
-      'MQTT Status changed in detail page:',
-      mqttStatus,
-      'Connected:',
-      mqttConnected
-    );
-
-    if (mqttStatus === 'connected' && !mqttConnected) {
-      // MQTT just connected, update state
-      console.log('MQTT connected in detail page');
-    } else if (mqttStatus === 'disconnected' && mqttConnected) {
-      // MQTT disconnected, show error
-      console.log('MQTT disconnected in detail page');
-      showAlert(
-        'Connection Lost',
-        'MQTT connection was lost. Please check your connection.',
-        'error'
-      );
-    } else if (mqttStatus === 'error') {
-      // MQTT error occurred
-      console.log('MQTT error in detail page');
-      showAlert(
-        'Connection Error',
-        'Failed to connect to MQTT broker. Please check your settings.',
-        'error'
-      );
-    }
-  }, [mqttStatus, mqttConnected]);
+  // MQTT status handling removed
 
   // MQTT subscriptions are now handled in the Zustand store
   // The store automatically subscribes to all necessary topics on connection
 
-  const onMessageArrived = (topic: string, payload: string) => {
-    // console.log('onMessageArrived', topic, payload, '.......');
-    try {
-      // Handle state messages for smart-light devices only
-      const deviceKey = getMqttDeviceKey();
-      if (deviceKey) {
-        const deviceStateTopic = buildTopic(deviceKey, 'state');
-        if (topic === deviceStateTopic) {
-          setIsActive(payload === 'ON' ? (true as any) : (false as any));
-        }
-      }
-
-      // Handle AC JSON results/state (for Aircon device only)
-      // ✅ State is now persisted in Zustand store automatically
-      const currentBroker = getCurrentBroker();
-      const acStatResultTopic = acStat('RESULT');
-      const acTeleStateTopic = acStat('STATE');
-      const acTeleLWTTTopic = acStat('LWT');
-
-      if (
-        topic === acStatResultTopic ||
-        topic === acTeleStateTopic ||
-        topic === `cloud/${AC_BASE_TOPIC}/stat/RESULT` ||
-        topic === `cloud/${AC_BASE_TOPIC}/tele/STATE`
-      ) {
-        try {
-          const data = JSON.parse(payload);
-          applyAcState(data);
-          // ✅ Removed duplicate AsyncStorage - Zustand store handles persistence
-        } catch (_e) {
-          // ignore non-JSON payloads
-        }
-      }
-
-      // Handle AC LWT online/offline (for Aircon device only)
-      // ✅ Online status is now persisted in Zustand store automatically
-      if (
-        topic === acTeleLWTTTopic ||
-        topic === `cloud/${AC_BASE_TOPIC}/tele/LWT`
-      ) {
-        const online = payload?.toLowerCase() === 'online';
-        setAcOnline(online);
-        const ts = new Date().toLocaleString();
-        setAcLastSeen(ts);
-        // ✅ Removed duplicate AsyncStorage - Zustand store handles persistence
-      }
-
-      // Handle sensor data
-      if (topic === 'home/test/temp') {
-        setTemperature(parseFloat(payload) as any);
-      }
-      if (topic === 'home/test/hum') {
-        // Handle humidity if needed
-      }
-      if (topic === 'home/test/lux') {
-        // Handle light level if needed
-      }
-
-      // Handle AC sensor data (also check cloud topics)
-      const acSensorTopic = acStat('SENSOR');
-      if (
-        topic === acSensorTopic ||
-        topic === `cloud/${AC_BASE_TOPIC}/tele/SENSOR`
-      ) {
-        try {
-          const data = JSON.parse(payload);
-          if (typeof data.temperature === 'number') {
-            setTemperature(data.temperature as any);
-          }
-        } catch (_e) {
-          // ignore non-JSON payloads
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing MQTT message:', error);
-    }
-  };
-
-  // onConnectionLost is now handled by the centralized MQTT service
-
-  const publishMessage = (topic: string, message: any) => {
-    if (!mqttConnected) {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    try {
-      const success = publishMqtt(`office/${deviceType}/control`, message);
-      if (!success) {
-        throw new Error('Failed to publish message');
-      }
-    } catch (error) {
-      showAlert('Error', 'Failed to publish message', 'error');
-      console.error('Publish error:', error);
-    }
-  };
-
-  // Network alert handlers
-  const handleNetworkChangeAlertClose = () => {
-    setNetworkChangeAlert({
-      visible: false,
-      title: '',
-      message: '',
-      type: 'info',
-    });
-  };
-
-  // Connection loss alert with cloud switch confirmation
-  const handleConnectionLossAlertClose = () => {
-    setConnectionLossAlert({
-      visible: false,
-      title: '',
-      message: '',
-    });
-  };
-
-  const handleSwitchToCloud = async () => {
-    try {
-      setConnectionLossAlert({
-        visible: false,
-        title: '',
-        message: '',
-      });
-
-      const success = await switchMqttBroker('cloud');
-      if (success) {
-        showAlert(
-          'Success',
-          'Successfully switched to cloud broker.',
-          'success'
-        );
-      } else {
-        showAlert(
-          'Error',
-          'Failed to switch to cloud broker. Please try again.',
-          'error'
-        );
-      }
-    } catch (error) {
-      console.error('Error switching to cloud broker:', error);
-      showAlert('Error', 'Failed to switch to cloud broker.', 'error');
-    }
-  };
-
-  const handleStayOnLocal = () => {
-    setConnectionLossAlert({
-      visible: false,
-      title: '',
-      message: '',
-    });
-  };
-
-  const handlePowerToggle = async (value: boolean) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
-
-    try {
-      setIsActive(value as any);
-      const deviceKey = getMqttDeviceKey();
-      if (deviceKey) {
-        const success = publishSet(deviceKey, value ? 'ON' : 'OFF');
-        if (!success) {
-          showAlert('Error', 'Failed to send command to device', 'error');
-        }
-        // Don't show success alert - just update the UI silently
-      }
-    } catch (error) {
-      console.error('Error toggling device power:', error);
-      showAlert('Error', 'Failed to control device', 'error');
-    }
-  };
-
-  const handleBrightnessChange = (value: number) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
-
-    const newBrightness = Math.max(0, Math.min(100, value));
-    setBrightness(newBrightness);
-    setDeviceBrightnessStore(newBrightness);
-    // Don't show success alert - just update the UI silently
-  };
+  // onMessageArrived removed - state updates via store
+  // handleBrightnessChange is defined above using store action
 
   // AC handlers
   const handleAcPowerToggle = async (value: boolean) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     try {
-      setAcPower(value as any);
-      setIsActive(value as any); // ✅ Sync main toggle with Aircon power
+      setAcPower(value);
+      setIsActive(value);
       setAcPowerStore(value);
-      // Don't show success alert - just update the UI silently
+      
+      haService.callService('climate', value ? 'turn_on' : 'turn_off', { 
+        entity_id: deviceId 
+      });
     } catch (error) {
       console.error('Error controlling AC power:', error);
       showAlert('Error', 'Failed to control AC', 'error');
@@ -987,29 +478,17 @@ export default function DeviceDetailScreen() {
   };
 
   const handleAcTempChange = async (value: number) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     try {
       const t = Math.max(16, Math.min(30, Math.round(value)));
       setAcTemp(t);
       setAcTemperatureStore(t);
-      // Don't show success alert - just update the UI silently
+      
+      haService.callService('climate', 'set_temperature', { 
+        entity_id: deviceId, 
+        temperature: t 
+      });
     } catch (error) {
       console.error('Error setting AC temperature:', error);
       showAlert('Error', 'Failed to set temperature', 'error');
@@ -1017,28 +496,16 @@ export default function DeviceDetailScreen() {
   };
 
   const handleAcModeChange = async (mode: 'cool' | 'heat' | 'auto' | 'dry') => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     try {
       setAcMode(mode);
       setAcModeStore(mode);
-      // Don't show success alert - just update the UI silently
+      
+      haService.callService('climate', 'set_hvac_mode', { 
+        entity_id: deviceId, 
+        hvac_mode: mode 
+      });
     } catch (error) {
       console.error('Error setting AC mode:', error);
       showAlert('Error', 'Failed to set mode', 'error');
@@ -1046,29 +513,24 @@ export default function DeviceDetailScreen() {
   };
 
   const handleSwingToggle = async (axis: 'UD' | 'LR', value: boolean) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     try {
-      if (axis === 'UD') setSwingUpDown(value as any);
-      if (axis === 'LR') setSwingLeftRight(value as any);
+      if (axis === 'UD') setSwingUpDown(value);
+      if (axis === 'LR') setSwingLeftRight(value);
       setAcSwingStore(axis, value);
-      // Don't show success alert - just update the UI silently
+      
+      // Mapping swing mode for HA (simplified)
+      // This depends on the specific integration capabilities
+      let swingMode = 'off';
+      if (axis === 'UD' && value) swingMode = 'vertical';
+      if (axis === 'LR' && value) swingMode = 'horizontal';
+      // If both are on, it might be 'both' or similar, but let's keep it simple
+      
+      haService.callService('climate', 'set_swing_mode', { 
+        entity_id: deviceId, 
+        swing_mode: swingMode 
+      });
     } catch (error) {
       console.error('Error setting AC swing:', error);
       showAlert('Error', 'Failed to set swing', 'error');
@@ -1076,28 +538,16 @@ export default function DeviceDetailScreen() {
   };
 
   const handleAcFanChange = async (speed: 'auto' | 'low' | 'med' | 'high') => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
+    if (!isConnected) return;
 
     try {
       setAcFanSpeed(speed);
       setAcFanSpeedStore(speed);
-      // Don't show success alert - just update the UI silently
+      
+      haService.callService('climate', 'set_fan_mode', { 
+        entity_id: deviceId, 
+        fan_mode: speed 
+      });
     } catch (error) {
       console.error('Error setting AC fan speed:', error);
       showAlert('Error', 'Failed to set fan speed', 'error');
@@ -1105,28 +555,10 @@ export default function DeviceDetailScreen() {
   };
 
   const handleScheduleSet = (time: string) => {
-    if (!mqttConnected && mqttStatus !== 'connecting') {
-      showAlert(
-        'Error',
-        'MQTT not connected. Please check your connection.',
-        'error'
-      );
-      return;
-    }
-
-    if (mqttStatus === 'connecting') {
-      showAlert(
-        'Info',
-        'MQTT is connecting. Please wait a moment and try again.',
-        'info'
-      );
-      return;
-    }
-
+    // Schedule not yet implemented for HA
     setSchedule(time);
-    publishMessage('control', `SCHEDULE:${time}`);
     setShowScheduleModal(false);
-    // Don't show success alert - just update the UI silently
+    showAlert('Info', 'Scheduling is not yet supported with Home Assistant.', 'info');
   };
 
   const handleCustomTimeSet = () => {
@@ -1153,22 +585,7 @@ export default function DeviceDetailScreen() {
     }));
   };
 
-  const showAlert = (
-    title: string,
-    message: string,
-    type: 'success' | 'error' | 'info' = 'info'
-  ) => {
-    setAlert({
-      visible: true,
-      title,
-      message,
-      type,
-    });
-  };
 
-  const hideAlert = () => {
-    setAlert((prev) => ({ ...prev, visible: false }));
-  };
 
   const renderBrightnessModal = () => (
     <Modal
@@ -1494,29 +911,12 @@ export default function DeviceDetailScreen() {
                 style={[
                   styles.mqttStatusIndicator,
                   {
-                    backgroundColor:
-                      deviceType === 'smart-ac'
-                        ? acOnline
-                          ? '#22c55e'
-                          : '#ef4444'
-                        : mqttStatus === 'connected'
-                        ? '#22c55e'
-                        : mqttStatus === 'connecting'
-                        ? '#eab308'
-                        : '#ef4444',
+                    backgroundColor: isConnected ? '#22c55e' : '#ef4444',
                   },
                 ]}
               />
               <Text style={styles.mqttStatusText}>
-                {deviceType === 'smart-ac'
-                  ? acOnline
-                    ? 'Device Online'
-                    : 'Device Offline'
-                  : mqttStatus === 'connected'
-                  ? `Connected (${currentBroker.toUpperCase()})`
-                  : mqttStatus === 'connecting'
-                  ? 'Connecting...'
-                  : 'Disconnected'}
+                {isConnected ? 'Connected to Home Assistant' : 'Disconnected'}
               </Text>
             </View>
           </View>
@@ -1732,59 +1132,85 @@ export default function DeviceDetailScreen() {
           <View style={styles.controlsContainer}>
             <Text style={styles.sectionTitle}>Quick Controls</Text>
             <View style={styles.controlsGrid}>
-              <TouchableOpacity
-                style={styles.controlItem}
-                onPress={() => setShowBrightnessModal(true)}
-              >
-                <View style={styles.controlIcon}>
-                  <Sun size={24} color="#2563eb" />
-                </View>
-                <View style={styles.controlInfo}>
-                  <Text style={styles.controlLabel}>Brightness</Text>
-                  <Text style={styles.controlValue}>
-                    {brightness}
-                    <Text style={styles.controlUnit}>%</Text>
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              {deviceType === 'smart-light' && (
+                <>
+                  <TouchableOpacity
+                    style={styles.controlItem}
+                    onPress={() => setShowBrightnessModal(true)}
+                  >
+                    <View style={styles.controlIcon}>
+                      <Sun size={24} color="#2563eb" />
+                    </View>
+                    <View style={styles.controlInfo}>
+                      <Text style={styles.controlLabel}>Brightness</Text>
+                      <Text style={styles.controlValue}>
+                        {brightness}
+                        <Text style={styles.controlUnit}>%</Text>
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.controlItem}
-                onPress={() => setShowColorModal(true)}
-              >
-                <View style={styles.controlIcon}>
-                  <Palette size={24} color="#2563eb" />
-                </View>
-                <View style={styles.controlInfo}>
-                  <Text style={styles.controlLabel}>Color</Text>
-                  <View style={styles.colorIndicator}>
-                    <View
-                      style={[
-                        styles.colorDot,
-                        {
-                          backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
-                        },
-                      ]}
-                    />
-                    <Text style={styles.controlValue}>RGB</Text>
+                  <TouchableOpacity
+                    style={styles.controlItem}
+                    onPress={() => setShowColorModal(true)}
+                  >
+                    <View style={styles.controlIcon}>
+                      <Palette size={24} color="#2563eb" />
+                    </View>
+                    <View style={styles.controlInfo}>
+                      <Text style={styles.controlLabel}>Color</Text>
+                      <View style={styles.colorIndicator}>
+                        <View
+                          style={[
+                            styles.colorDot,
+                            {
+                              backgroundColor: `rgb(${color.r}, ${color.g}, ${color.b})`,
+                            },
+                          ]}
+                        />
+                        <Text style={styles.controlValue}>RGB</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {deviceType === 'smart-light' && effectList.length > 0 && (
+                <TouchableOpacity
+                  style={styles.controlItem}
+                  onPress={() => setShowEffectsModal(true)}
+                >
+                  <View style={styles.controlIcon}>
+                    <Sparkles size={24} color="#2563eb" />
                   </View>
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.controlInfo}>
+                    <Text style={styles.controlLabel}>Effect</Text>
+                    <Text style={styles.controlValue} numberOfLines={1}>
+                      {effect || 'None'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                style={styles.controlItem}
-                onPress={() => setShowScheduleModal(true)}
-              >
-                <View style={styles.controlIcon}>
-                  <Timer size={24} color="#2563eb" />
-                </View>
-                <View style={styles.controlInfo}>
-                  <Text style={styles.controlLabel}>Schedule</Text>
-                  <Text style={styles.controlValue}>{schedule}</Text>
-                </View>
-              </TouchableOpacity>
+              {['smart-light', 'smart-tv', 'air-purifier', 'smart-curtain'].includes(
+                deviceType
+              ) && (
+                <TouchableOpacity
+                  style={styles.controlItem}
+                  onPress={() => setShowScheduleModal(true)}
+                >
+                  <View style={styles.controlIcon}>
+                    <Timer size={24} color="#2563eb" />
+                  </View>
+                  <View style={styles.controlInfo}>
+                    <Text style={styles.controlLabel}>Schedule</Text>
+                    <Text style={styles.controlValue}>{schedule}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
+              {/* Power Usage - Placeholder for future smart plugs */}
+              {/* <TouchableOpacity
                 style={styles.controlItem}
                 onPress={() => setShowPowerModal(true)}
               >
@@ -1798,7 +1224,7 @@ export default function DeviceDetailScreen() {
                     <Text style={styles.controlUnit}>W</Text>
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
           </View>
         )}
@@ -1864,57 +1290,43 @@ export default function DeviceDetailScreen() {
         onClose={hideAlert}
       />
 
-      {/* Network Change Alert */}
-      <CustomAlert
-        visible={networkChangeAlert.visible}
-        title={networkChangeAlert.title}
-        message={networkChangeAlert.message}
-        type={networkChangeAlert.type}
-        onClose={handleNetworkChangeAlertClose}
-      />
 
-      {/* Connection Loss Alert with Cloud Switch Confirmation */}
       <Modal
-        visible={connectionLossAlert.visible}
-        transparent
         animationType="fade"
-        onRequestClose={handleConnectionLossAlertClose}
-        statusBarTranslucent
+        transparent={true}
+        visible={showEffectsModal}
+        onRequestClose={() => setShowEffectsModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={handleConnectionLossAlertClose}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
+              <Text style={styles.modalTitle}>Light Effects</Text>
+              <TouchableOpacity onPress={() => setShowEffectsModal(false)}>
                 <X size={24} color="#94a3b8" />
               </TouchableOpacity>
             </View>
-
-            <View style={[styles.iconContainer, { borderColor: '#2563eb' }]}>
-              <Wifi size={32} color="#2563eb" />
-            </View>
-
-            <Text style={styles.modalTitle}>{connectionLossAlert.title}</Text>
-            <Text style={styles.message}>{connectionLossAlert.message}</Text>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#2563eb' }]}
-                onPress={handleSwitchToCloud}
-              >
-                <Text style={styles.buttonText}>Switch to Cloud</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#334155' }]}
-                onPress={handleStayOnLocal}
-              >
-                <Text style={styles.buttonText}>Stay on Local</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {effectList.map((item) => (
+                <TouchableOpacity
+                  key={item}
+                  style={[
+                    styles.effectItem,
+                    effect === item && styles.effectItemActive,
+                  ]}
+                  onPress={() => handleEffectChange(item)}
+                >
+                  <Text
+                    style={[
+                      styles.effectText,
+                      effect === item && styles.effectTextActive,
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                  {effect === item && <Sparkles size={20} color="#2563eb" />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -28,42 +29,51 @@ export default function DeviceListScreen() {
 
   // Use Zustand store
   const rooms = useSmartHomeStore((state) => state.rooms);
-  const toggleDeviceWithMqtt = useSmartHomeStore(
-    (state) => state.toggleDeviceWithMqtt
-  );
+  const visibleDeviceIds = useSmartHomeStore((state) => state.visibleDeviceIds);
+  const toggleDevice = useSmartHomeStore((state) => state.toggleDevice);
 
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
   const [isRoomSelectionModalVisible, setIsRoomSelectionModalVisible] =
     useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
 
-  const toggleDevice = (
+  const handleToggleDevice = (
     roomId: string,
     deviceId: string,
     deviceIndex: number
   ) => {
-    console.log(
-      'toggleDevice: room_Id ->',
-      roomId,
-      '| device_Id->',
-      deviceId,
-      '| device_Index->',
-      deviceIndex
-    );
-    toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
+    toggleDevice(roomId, deviceType, deviceId);
   };
+
+  // Filter devices by type and visibility
+  const devicesByRoom = rooms
+    .map((room) => ({
+      ...room,
+      devices: (room.devices[deviceType] || []).filter((device) =>
+        visibleDeviceIds.includes(device.id)
+      ),
+    }))
+    .filter((room) => room.devices.length > 0);
 
   const DeviceIcon = deviceIcons[deviceType];
 
   // Calculate total devices and active devices
   const totalDevices = rooms.reduce((total, room) => {
     const devices = room.devices[deviceType] || [];
-    return total + devices.length;
+    return (
+      total +
+      devices.filter((device) => visibleDeviceIds.includes(device.id)).length
+    );
   }, 0);
 
   const activeDevices = rooms.reduce((total, room) => {
     const devices = room.devices[deviceType] || [];
-    return total + devices.filter((device) => device.isActive).length;
+    return (
+      total +
+      devices.filter(
+        (device) => device.isActive && visibleDeviceIds.includes(device.id)
+      ).length
+    );
   }, 0);
 
   const handleAddDevice = (roomId: string) => {
@@ -125,42 +135,39 @@ export default function DeviceListScreen() {
             </TouchableOpacity>
           </View>
 
-          {rooms.map((room) => {
-            const devices = room.devices[deviceType] || [];
-            if (devices.length === 0) return null;
-            console.log('devices ->', devices);
+          {devicesByRoom.map((room) => (
+            <View key={room.id} style={styles.roomSection}>
+              <TouchableOpacity
+                style={styles.roomHeader}
+                onPress={() => router.push(`/room/${room.id}`)}
+              >
+                <Text style={styles.roomTitle}>{room.name}</Text>
+                <ChevronRight size={20} color="#94a3b8" />
+              </TouchableOpacity>
 
-            return (
-              <View key={room.id} style={styles.roomSection}>
-                <TouchableOpacity
-                  style={styles.roomHeader}
-                  onPress={() => router.push(`/room/${room.id}`)}
-                >
-                  <Text style={styles.roomTitle}>{room.name}</Text>
-                  <ChevronRight size={20} color="#94a3b8" />
-                </TouchableOpacity>
-
-                {devices.map((device, idx) => (
-                  <TouchableOpacity
-                    key={device.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/device/[type]/[id]',
-                        params: { type: deviceType, id: device.id },
-                      })
-                    }
-                  >
-                    <DeviceItem
-                      title={device.name}
-                      icon={DeviceIcon}
-                      isActive={device.isActive}
-                      onToggle={() => toggleDevice(room.id, device.id, idx)}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            );
-          })}
+              {room.devices.map((device, idx) => (
+                <DeviceItem
+                  key={device.id}
+                  title={device.name}
+                  icon={DeviceIcon}
+                  isActive={device.isActive}
+                  onToggle={() =>
+                    handleToggleDevice(room.id, device.id, idx)
+                  }
+                  onPress={() => {
+                    router.push({
+                      pathname: '/device/[type]/[id]',
+                      params: {
+                        type: deviceType,
+                        id: device.id,
+                        roomId: room.id,
+                      },
+                    });
+                  }}
+                />
+              ))}
+            </View>
+          ))}
         </View>
       </ScrollView>
 
@@ -261,9 +268,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   addButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
     color: '#2563eb',
+    fontFamily: 'Inter-SemiBold',
     marginLeft: 4,
   },
   roomSection: {
@@ -271,13 +277,13 @@ const styles = StyleSheet.create({
   },
   roomHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
   roomTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: '#94a3b8',
+    marginRight: 8,
   },
 });

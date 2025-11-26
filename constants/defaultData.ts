@@ -1,4 +1,4 @@
-import { Lightbulb, Wind, Tv, Monitor } from 'lucide-react-native';
+import { Lightbulb, Wind, Tv, Monitor, Blinds, Activity } from 'lucide-react-native';
 
 // Authentication types
 export interface User {
@@ -19,7 +19,9 @@ export type DeviceType =
   | 'smart-light'
   | 'smart-ac'
   | 'smart-tv'
-  | 'air-purifier';
+  | 'air-purifier'
+  | 'smart-curtain'
+  | 'sensor';
 
 // Device interface
 export interface Device {
@@ -36,6 +38,12 @@ export interface Device {
     online?: boolean;
     lastSeen?: string;
   };
+  // Light-specific properties
+  brightness?: number; // 0-255
+  rgb_color?: [number, number, number];
+  effect?: string;
+  effect_list?: string[];
+  supported_features?: number;
 }
 
 // Room interface
@@ -52,6 +60,8 @@ export const deviceIcons: Record<DeviceType, typeof Lightbulb> = {
   'smart-ac': Wind,
   'smart-tv': Tv,
   'air-purifier': Monitor,
+  'smart-curtain': Blinds,
+  'sensor': Activity,
 } as const;
 
 // Default device states
@@ -99,36 +109,6 @@ export const defaultRoomData: Record<string, Room> = {
       // 'air-purifier': [{ id: '1', name: 'Dyson Purifier', isActive: true }],
     },
   },
-  // bedroom: {
-  //   name: 'Bedroom',
-  //   devices: {
-  //     'smart-light': [
-  //       { id: '3', name: 'Ceiling Light', isActive: true },
-  //       { id: '4', name: 'Night Lamp', isActive: false },
-  //     ],
-  //     'smart-ac': [{ id: '2', name: 'Wall AC', isActive: false }],
-  //     'smart-tv': [{ id: '2', name: 'LG TV', isActive: false }],
-  //     'air-purifier': [{ id: '2', name: 'Xiaomi Purifier', isActive: false }],
-  //   },
-  // },
-  // kitchen: {
-  //   name: 'Kitchen',
-  //   devices: {
-  //     'smart-light': [
-  //       { id: '5', name: 'Main Light', isActive: true },
-  //       // { id: '6', name: 'Under Cabinet', isActive: true },
-  //     ],
-  //   },
-  // },
-  // bathroom: {
-  //   name: 'Bathroom',
-  //   devices: {
-  //     'smart-light': [
-  //       { id: '7', name: 'Main Light', isActive: false },
-  //       { id: '8', name: 'Mirror Light', isActive: true },
-  //     ],
-  //   },
-  // },
 };
 
 // Helper function to get device title

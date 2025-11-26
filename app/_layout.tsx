@@ -12,6 +12,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { AuthProvider } from '../_context/AuthContext';
+import { CustomAlert } from '../components/CustomAlert';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,10 +27,14 @@ export default function RootLayout() {
   });
 
   // Initialize the Zustand store
-  const initializeMqtt = useSmartHomeStore((state) => state.initializeMqtt);
+  const initializeSmartHome = useSmartHomeStore((state) => state.initializeSmartHome);
   const loadConfiguredDevices = useSmartHomeStore(
     (state) => state.loadConfiguredDevices
   );
+  const error = useSmartHomeStore((state) => state.error);
+  const clearError = useSmartHomeStore((state) => state.clearError);
+
+  const isHydrated = useSmartHomeStore((state) => state.isHydrated);
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -38,10 +43,13 @@ export default function RootLayout() {
   }, [fontsLoaded]);
 
   useEffect(() => {
-    // Initialize MQTT and load devices when app starts
-    initializeMqtt();
-    loadConfiguredDevices();
-  }, [initializeMqtt, loadConfiguredDevices]);
+    // Initialize Smart Home Service and load devices when app starts
+    // Only if store is hydrated (persisted data loaded)
+    if (isHydrated) {
+      initializeSmartHome();
+      loadConfiguredDevices();
+    }
+  }, [isHydrated, initializeSmartHome, loadConfiguredDevices]);
 
   if (!fontsLoaded) {
     return null;
@@ -79,6 +87,13 @@ export default function RootLayout() {
         />
       </Stack>
       <StatusBar style="light" />
+      <CustomAlert
+        visible={!!error}
+        title="Error"
+        message={error || ''}
+        type="error"
+        onClose={clearError}
+      />
     </AuthProvider>
   );
 }

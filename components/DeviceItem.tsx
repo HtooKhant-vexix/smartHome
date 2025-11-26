@@ -7,6 +7,7 @@ interface DeviceItemProps {
   icon: React.ElementType;
   isActive: boolean;
   onToggle: () => void;
+  onPress?: () => void;
 }
 
 export const DeviceItem = ({
@@ -14,9 +15,14 @@ export const DeviceItem = ({
   icon: Icon,
   isActive,
   onToggle,
+  onPress,
 }: DeviceItemProps) => {
   return (
-    <View style={styles.deviceItem}>
+    <TouchableOpacity
+      style={styles.deviceItem}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+    >
       <View style={styles.deviceInfo}>
         <View style={styles.deviceIconContainer}>
           <Icon size={24} color="white" />
@@ -34,7 +40,7 @@ export const DeviceItem = ({
       >
         <Power size={20} color={isActive ? 'white' : '#94a3b8'} />
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 };
 

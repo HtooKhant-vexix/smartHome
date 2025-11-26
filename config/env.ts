@@ -101,54 +101,52 @@ const rawEnv = {
   APP_NAME: readEnv('APP_NAME', 'Sixth Kendra Smart Home App'),
   APP_VERSION: readEnv('APP_VERSION', '1.0.0'),
   STORAGE_KEY: readEnv('STORAGE_KEY', 'smart-home-storage'),
+  HA_URL: readEnv('HA_URL', 'http://192.168.1.177:8123'),
+  HA_TOKEN: readEnv('HA_TOKEN', ''),
   DEBUG_MQTT: readEnv('DEBUG_MQTT', 'false'),
   DEBUG_NETWORK: readEnv('DEBUG_NETWORK', 'false'),
 };
 
 export const env = rawEnv;
 
-// MQTT Configuration
-export const mqttConfig = {
-  local: {
-    host: rawEnv.LOCAL_MQTT_HOST,
-    port: toNumber(rawEnv.LOCAL_MQTT_PORT, 9001),
-    username: rawEnv.LOCAL_MQTT_USERNAME || undefined,
-    password: rawEnv.LOCAL_MQTT_PASSWORD || undefined,
-    clientIdPrefix: rawEnv.LOCAL_MQTT_CLIENT_ID_PREFIX,
-    useSSL: toBoolean(rawEnv.LOCAL_MQTT_USE_SSL),
-    keepAlive: toNumber(rawEnv.LOCAL_MQTT_KEEP_ALIVE, 30),
-  },
-  cloud: {
-    host: rawEnv.CLOUD_MQTT_HOST,
-    port: toNumber(rawEnv.CLOUD_MQTT_PORT, 8884),
-    username: rawEnv.CLOUD_MQTT_USERNAME || undefined,
-    password: rawEnv.CLOUD_MQTT_PASSWORD || undefined,
-    clientIdPrefix: rawEnv.CLOUD_MQTT_CLIENT_ID_PREFIX,
-    useSSL: toBoolean(rawEnv.CLOUD_MQTT_USE_SSL, true),
-    keepAlive: toNumber(rawEnv.CLOUD_MQTT_KEEP_ALIVE, 30),
-  },
-} as const;
-
-// Network Configuration
-export const networkConfig = {
-  localBrokerIP: rawEnv.LOCAL_BROKER_IP,
-  localNetworkSSIDs: toList(rawEnv.LOCAL_NETWORK_SSIDS),
-  localNetworkSubnets: toList(rawEnv.LOCAL_NETWORK_SUBNETS),
-} as const;
-
-// Topic Configuration
-export const topicConfig = {
-  baseLocation: rawEnv.TOPIC_BASE_LOCATION,
-  baseCloudLocation: rawEnv.TOPIC_BASE_CLOUD_LOCATION,
-  controller: rawEnv.TOPIC_CONTROLLER,
-  acBase: rawEnv.TOPIC_AC_BASE,
-} as const;
-
 // App Configuration
 export const appConfig = {
   name: rawEnv.APP_NAME,
   version: rawEnv.APP_VERSION,
   storageKey: rawEnv.STORAGE_KEY,
+  haUrl: rawEnv.HA_URL,
+  haToken: rawEnv.HA_TOKEN,
+  mqtt: {
+    local: {
+      host: rawEnv.LOCAL_MQTT_HOST,
+      port: toNumber(rawEnv.LOCAL_MQTT_PORT, 9001),
+      username: rawEnv.LOCAL_MQTT_USERNAME,
+      password: rawEnv.LOCAL_MQTT_PASSWORD,
+      clientIdPrefix: rawEnv.LOCAL_MQTT_CLIENT_ID_PREFIX,
+      useSSL: toBoolean(rawEnv.LOCAL_MQTT_USE_SSL, false),
+      keepAlive: toNumber(rawEnv.LOCAL_MQTT_KEEP_ALIVE, 30),
+    },
+    cloud: {
+      host: rawEnv.CLOUD_MQTT_HOST,
+      port: toNumber(rawEnv.CLOUD_MQTT_PORT, 8884),
+      username: rawEnv.CLOUD_MQTT_USERNAME,
+      password: rawEnv.CLOUD_MQTT_PASSWORD,
+      clientIdPrefix: rawEnv.CLOUD_MQTT_CLIENT_ID_PREFIX,
+      useSSL: toBoolean(rawEnv.CLOUD_MQTT_USE_SSL, true),
+      keepAlive: toNumber(rawEnv.CLOUD_MQTT_KEEP_ALIVE, 30),
+    },
+    brokerIp: rawEnv.LOCAL_BROKER_IP,
+    topics: {
+      baseLocation: rawEnv.TOPIC_BASE_LOCATION,
+      baseCloudLocation: rawEnv.TOPIC_BASE_CLOUD_LOCATION,
+      controller: rawEnv.TOPIC_CONTROLLER,
+      acBase: rawEnv.TOPIC_AC_BASE,
+    },
+  },
+  network: {
+    ssids: toList(rawEnv.LOCAL_NETWORK_SSIDS),
+    subnets: toList(rawEnv.LOCAL_NETWORK_SUBNETS),
+  },
 } as const;
 
 // Debug Configuration

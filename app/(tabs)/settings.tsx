@@ -22,13 +22,10 @@ import {
   Lock,
   Globe,
   Palette,
+  Settings as SettingsIcon,
 } from 'lucide-react-native';
-// Bluetooth service removed
-import { CustomAlert } from '../../components/CustomAlert';
-import { NetworkDebugger } from '../../components/NetworkDebugger';
-// Paho no longer needed here; use centralized mqttService
 import { useRouter } from 'expo-router';
-// Removed unused MQTT imports
+import { CustomAlert } from '../../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
@@ -190,8 +187,13 @@ export default function SettingsScreen() {
             icon={<Wifi size={24} color="#2563eb" />}
             title="WiFi Configuration"
             subtitle="Configure WiFi for ESP32 devices"
+            onPress={() => router.push('/wifi-setup')}
+          />
+          <SettingItem
+            icon={<Wifi size={24} color="#2563eb" />}
+            title="Device Setup"
+            subtitle="Configure for ESP32 devices"
             onPress={() => router.push('/device-setup')}
-            // onPress={() => router.push('/wifi-setup')}
           />
         </SettingSection>
 
@@ -658,372 +660,8 @@ export default function SettingsScreen() {
           </View>
         </SettingSection> */}
 
-        {/* Centralized MQTT Configuration Section */}
-        {/* <SettingSection title="MQTT Configuration">
-          <View style={styles.tcpCard}>
-            <View style={styles.tcpHeader}>
-              <View style={styles.tcpStatus}>
-                <Text style={styles.statusText}>Centralized MQTT Service</Text>
-              </View>
-              <View style={styles.headerButtons}>
-                {mqttService.isConnected() ? (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.disconnectButton]}
-                    onPress={() => mqttService.disconnect()}
-                  >
-                    <PowerOff size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.addDeviceButton]}
-                    onPress={() => mqttService.connect()}
-                  >
-                    <Network size={20} color="#2563eb" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
 
-            <View style={styles.tcpContent}>
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Host:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={mqttConfig.host}
-                  onChangeText={(text) => {
-                    setMqttConfig((prev) => ({ ...prev, host: text }));
-                    mqttService.updateConfig({ host: text });
-                  }}
-                  placeholder="Enter MQTT broker host"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
 
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Port:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={mqttConfig.port.toString()}
-                  onChangeText={(text) => {
-                    const port = parseInt(text) || 1883;
-                    setMqttConfig((prev) => ({ ...prev, port }));
-                    mqttService.updateConfig({ port });
-                  }}
-                  placeholder="Enter MQTT broker port"
-                  placeholderTextColor="#64748b"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Client ID:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={mqttConfig.clientId}
-                  onChangeText={(text) => {
-                    setMqttConfig((prev) => ({ ...prev, clientId: text }));
-                    mqttService.updateConfig({ clientId: text });
-                  }}
-                  placeholder="Enter client ID"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Username:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={mqttConfig.username || ''}
-                  onChangeText={(text) => {
-                    setMqttConfig((prev) => ({ ...prev, username: text }));
-                    mqttService.updateConfig({ username: text });
-                  }}
-                  placeholder="Enter username (optional)"
-                  placeholderTextColor="#64748b"
-                />
-              </View>
-
-              <View style={styles.tcpInputGroup}>
-                <Text style={styles.tcpLabel}>Password:</Text>
-                <TextInput
-                  style={styles.tcpInput}
-                  value={mqttConfig.password || ''}
-                  onChangeText={(text) => {
-                    setMqttConfig((prev) => ({ ...prev, password: text }));
-                    mqttService.updateConfig({ password: text });
-                  }}
-                  placeholder="Enter password (optional)"
-                  placeholderTextColor="#64748b"
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.tcpStatus}>
-                <View
-                  style={[
-                    styles.statusIndicator,
-                    {
-                      backgroundColor: mqttService.isConnected()
-                        ? '#22c55e'
-                        : '#ef4444',
-                    },
-                  ]}
-                />
-                <Text style={styles.statusText}>
-                  Status: {mqttService.getStatus()}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </SettingSection> */}
-
-        {/* MQTT Connection Test Section */}
-        {/* <SettingSection title="MQTT Connection Test">
-          <View style={styles.tcpCard}>
-            <View style={styles.tcpHeader}>
-              <View style={styles.tcpStatus}>
-                <Text style={styles.statusText}>
-                  {mqttConnections.length} Connection
-                  {mqttConnections.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.headerButton, styles.addDeviceButton]}
-                onPress={addMqttConnection}
-              >
-                <Plus size={20} color="#2563eb" />
-              </TouchableOpacity>
-            </View>
-
-            {mqttConnections.map((connection) => (
-              <View key={connection.id} style={styles.tcpConnectionCard}>
-                <View style={styles.tcpConnectionHeader}>
-                  <View style={styles.tcpStatus}>
-                    <View
-                      style={[
-                        styles.statusIndicator,
-                        {
-                          backgroundColor:
-                            connection.status === 'connected'
-                              ? '#22c55e'
-                              : connection.status === 'connecting'
-                              ? '#eab308'
-                              : '#ef4444',
-                        },
-                      ]}
-                    />
-                    <Text style={styles.statusText}>
-                      {connection.status === 'connected'
-                        ? 'Connected'
-                        : connection.status === 'connecting'
-                        ? 'Connecting...'
-                        : 'Disconnected'}
-                    </Text>
-                  </View>
-                  <View style={styles.headerButtons}>
-                    {connection.status === 'connected' ? (
-                      <TouchableOpacity
-                        style={[styles.headerButton, styles.disconnectButton]}
-                        onPress={() => disconnectMqtt(connection.id)}
-                      >
-                        <PowerOff size={20} color="#ef4444" />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.headerButton,
-                          connection.status === 'connecting' &&
-                            styles.scanningButton,
-                        ]}
-                        onPress={() => connectMqtt(connection.id)}
-                        disabled={connection.status === 'connecting'}
-                      >
-                        {connection.status === 'connecting' ? (
-                          <ActivityIndicator color="#2563eb" />
-                        ) : (
-                          <Network size={20} color="#2563eb" />
-                        )}
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      style={[styles.headerButton, styles.removeDeviceButton]}
-                      onPress={() => removeMqttConnection(connection.id)}
-                    >
-                      <X size={20} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.tcpContent}>
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Host:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.host}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { host: text })
-                      }
-                      placeholder="Enter host (e.g., 127.0.0.1)"
-                      placeholderTextColor="#64748b"
-                      editable={connection.status === 'disconnected'}
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Port:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.port.toString()}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, {
-                          port: parseInt(text) || 1883,
-                        })
-                      }
-                      placeholder="Enter port (e.g., 1883)"
-                      placeholderTextColor="#64748b"
-                      keyboardType="numeric"
-                      editable={connection.status === 'disconnected'}
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Client ID:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.clientId}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { clientId: text })
-                      }
-                      placeholder="Enter client ID"
-                      placeholderTextColor="#64748b"
-                      editable={connection.status === 'disconnected'}
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Username:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.username || ''}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { username: text })
-                      }
-                      placeholder="Enter username (optional)"
-                      placeholderTextColor="#64748b"
-                      editable={connection.status === 'disconnected'}
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Password:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.password || ''}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { password: text })
-                      }
-                      placeholder="Enter password (optional)"
-                      placeholderTextColor="#64748b"
-                      secureTextEntry
-                      editable={connection.status === 'disconnected'}
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Topic:</Text>
-                    <TextInput
-                      style={styles.tcpInput}
-                      value={connection.topic}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { topic: text })
-                      }
-                      placeholder="Enter topic (e.g., test/topic)"
-                      placeholderTextColor="#64748b"
-                    />
-                  </View>
-
-                  <View style={styles.tcpInputGroup}>
-                    <Text style={styles.tcpLabel}>Test Message:</Text>
-                    <TextInput
-                      style={[styles.tcpInput, styles.tcpMessageInput]}
-                      value={connection.message}
-                      onChangeText={(text) =>
-                        updateMqttConnection(connection.id, { message: text })
-                      }
-                      placeholder="Enter test message"
-                      placeholderTextColor="#64748b"
-                      multiline
-                    />
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.tcpSendButton,
-                      (!connection.message.trim() ||
-                        !connection.topic.trim() ||
-                        connection.status !== 'connected') &&
-                        styles.buttonDisabled,
-                    ]}
-                    onPress={() => sendMqttMessage(connection.id)}
-                    disabled={
-                      !connection.message.trim() ||
-                      !connection.topic.trim() ||
-                      connection.status !== 'connected'
-                    }
-                  >
-                    <Send size={20} color="#ffffff" />
-                    <Text style={styles.tcpSendButtonText}>
-                      Send Test Message
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.tcpMessagesContainer}>
-                    <Text style={styles.tcpMessagesTitle}>Connection Log:</Text>
-                    <ScrollView style={styles.tcpMessagesList}>
-                      {connection.messages.map((msg, index) => (
-                        <Text
-                          key={index}
-                          style={[
-                            styles.tcpMessageText,
-                            msg.includes('Sending:') &&
-                              styles.sendingMessageText,
-                            msg.includes('Sent successfully') &&
-                              styles.sentMessageText,
-                            msg.includes('Error') && styles.errorMessageText,
-                            msg.includes('Received:') &&
-                              styles.receivedMessageText,
-                          ]}
-                        >
-                          {msg}
-                        </Text>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-              </View>
-            ))}
-
-            {mqttConnections.length === 0 && (
-              <View style={styles.noTcpConnections}>
-                <View style={styles.noTcpIcon}>
-                  <Network size={48} color="#64748b" />
-                </View>
-                <Text style={styles.noTcpText}>No MQTT connections</Text>
-                <Text style={styles.noTcpSubtext}>
-                  Add a new MQTT connection to start testing
-                </Text>
-                <TouchableOpacity
-                  style={styles.addTcpButton}
-                  onPress={addMqttConnection}
-                >
-                  <Text style={styles.addTcpButtonText}>
-                    Add TCP Connection
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </SettingSection> */}
 
         {/* Account Section */}
         <SettingSection title="Account">
@@ -1053,20 +691,16 @@ export default function SettingsScreen() {
             icon={<Smartphone size={24} color="#2563eb" />}
             title="Device Management"
             subtitle="Add, remove, and configure devices"
-            onPress={() => {}}
+            onPress={() => router.push('/settings/device-management')}
+          />
+          <SettingItem
+            icon={<SettingsIcon size={24} color="#3b82f6" />}
+            title="HA Configuration"
+            subtitle="Configure Home Assistant connection"
+            onPress={() => router.push('/settings/ha-config')}
           />
           <SettingItem
             icon={<Shield size={24} color="#2563eb" />}
-            title="Security"
-            subtitle="Home security and access control"
-            onPress={() => {}}
-          />
-        </SettingSection>
-
-        {/* Preferences */}
-        <SettingSection title="Preferences">
-          <SettingItem
-            icon={<Bell size={24} color="#2563eb" />}
             title="Notifications"
             subtitle="Push notifications and alerts"
             showArrow={false}
@@ -2059,144 +1693,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // MQTT Bridge Styles
-  brokerInfo: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-  },
-  brokerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  brokerLabel: {
-    color: '#94a3b8',
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-  },
-  brokerValue: {
-    color: '#f8fafc',
-    fontSize: 14,
-    fontFamily: 'Inter-Medium',
-    fontWeight: '500',
-  },
-  testSection: {
-    marginTop: 16,
-  },
-  testTitle: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  testButton: {
-    backgroundColor: '#2563eb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    gap: 8,
-  },
-  cloudTestButton: {
-    backgroundColor: '#059669',
-  },
-  testButtonActive: {
-    opacity: 0.7,
-  },
-  testButtonError: {
-    backgroundColor: '#dc2626',
-  },
-  testButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  infoSection: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-  },
-  infoTitle: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  infoText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    marginBottom: 8,
-    lineHeight: 20,
-  },
 
-  // Bridge Test Styles
-  bridgeTestButton: {
-    backgroundColor: '#7c3aed',
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  bridgeResults: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-  },
-  bridgeResultsTitle: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  bridgeResultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  bridgeResultLabel: {
-    color: '#94a3b8',
-    fontSize: 14,
-  },
-  bridgeResultValue: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  bridgeErrors: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  bridgeErrorTitle: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  bridgeErrorText: {
-    color: '#ef4444',
-    fontSize: 12,
-    marginBottom: 4,
-  },
 
-  // Network Section Styles
-  networkSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  networkIndicator: {
-    marginTop: 8,
-  },
 });

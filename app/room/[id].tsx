@@ -30,9 +30,8 @@ export default function RoomDetailScreen() {
 
   // Use Zustand store
   const rooms = useSmartHomeStore((state) => state.rooms);
-  const toggleDeviceWithMqtt = useSmartHomeStore(
-    (state) => state.toggleDeviceWithMqtt
-  );
+  const visibleDeviceIds = useSmartHomeStore((state) => state.visibleDeviceIds);
+  const toggleDevice = useSmartHomeStore((state) => state.toggleDevice);
   const room = rooms.find((r) => r.id === roomId);
 
   const [isAddDeviceModalVisible, setIsAddDeviceModalVisible] = useState(false);
@@ -43,21 +42,23 @@ export default function RoomDetailScreen() {
 
   // Get all devices in this room
   const allDevices = Object.entries(room.devices).flatMap(([type, devices]) =>
-    devices.map((device) => ({
-      ...device,
-      type: type as DeviceType,
-    }))
+    devices
+      .filter((device) => visibleDeviceIds.includes(device.id))
+      .map((device) => ({
+        ...device,
+        type: type as DeviceType,
+      }))
   );
 
   const activeDevices = allDevices.filter((device) => device.isActive).length;
   const totalDevices = allDevices.length;
 
-  const toggleDevice = (
+  const handleToggleDevice = (
     deviceType: DeviceType,
     deviceId: string,
     deviceIndex: number
   ) => {
-    toggleDeviceWithMqtt(roomId, deviceType, deviceId, deviceIndex);
+    toggleDevice(roomId, deviceType, deviceId);
   };
 
   const handleDevicePress = (deviceType: DeviceType, deviceId: string) => {
@@ -116,40 +117,56 @@ export default function RoomDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {Object.entries(room.devices).map(([deviceType, devices]) => (
-            <View key={deviceType} style={styles.deviceTypeSection}>
-              <TouchableOpacity
-                style={styles.roomHeader}
-                onPress={() => handleDeviceTypePress(deviceType as DeviceType)}
-              >
-                <Text style={styles.roomTitle}>
-                  {deviceType
-                    .split('-')
-                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                    .join(' ')}
-                </Text>
-                <ChevronRight size={20} color="#94a3b8" />
-              </TouchableOpacity>
+          {Object.entries(room.devices).map(([deviceType, devices]) => {
+            const visibleDevices = devices.filter((d) =>
+              visibleDeviceIds.includes(d.id)
+            );
 
-              {devices.map((device, idx) => (
+            if (visibleDevices.length === 0) return null;
+
+            return (
+              <View key={deviceType} style={styles.deviceTypeSection}>
                 <TouchableOpacity
-                  key={device.id}
+                  style={styles.roomHeader}
                   onPress={() =>
-                    handleDevicePress(deviceType as DeviceType, device.id)
+                    handleDeviceTypePress(deviceType as DeviceType)
                   }
                 >
-                  <DeviceItem
-                    title={device.name}
-                    icon={deviceIcons[deviceType as DeviceType]}
-                    isActive={device.isActive}
-                    onToggle={() =>
-                      toggleDevice(deviceType as DeviceType, device.id, idx)
-                    }
-                  />
+                  <Text style={styles.roomTitle}>
+                    {deviceType
+                      .split('-')
+                      .map(
+                        (word) => word.charAt(0).toUpperCase() + word.slice(1)
+                      )
+                      .join(' ')}
+                  </Text>
+                  <ChevronRight size={20} color="#94a3b8" />
                 </TouchableOpacity>
-              ))}
-            </View>
-          ))}
+
+                {visibleDevices.map((device, idx) => (
+                  <TouchableOpacity
+                    key={device.id}
+                    onPress={() =>
+                      handleDevicePress(deviceType as DeviceType, device.id)
+                    }
+                  >
+                    <DeviceItem
+                      title={device.name}
+                      icon={deviceIcons[deviceType as DeviceType]}
+                      isActive={device.isActive}
+                      onToggle={() =>
+                        handleToggleDevice(
+                          deviceType as DeviceType,
+                          device.id,
+                          idx
+                        )
+                      }
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
 
