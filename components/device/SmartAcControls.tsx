@@ -17,16 +17,23 @@ import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { haService } from '@/services/haService';
 import { CustomAlert } from '../CustomAlert';
 
+import { Device } from '@/constants/defaultData';
+
 interface SmartAcControlsProps {
-  deviceId: string;
+  device: Device;
   isConnected: boolean;
+  showAlert?: (title: string, message: string, type: 'success' | 'error') => void;
 }
 
 export const SmartAcControls: React.FC<SmartAcControlsProps> = ({
-  deviceId,
+  device,
   isConnected,
+  showAlert: parentShowAlert,
 }) => {
-  const [alert, setAlert] = useState<{
+  const deviceId = device.id;
+  const acSettings = device.acSettings;
+
+  const [localAlert, setLocalAlert] = useState<{
     visible: boolean;
     title: string;
     message: string;
@@ -39,30 +46,25 @@ export const SmartAcControls: React.FC<SmartAcControlsProps> = ({
   });
 
   const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info') => {
-    setAlert({ visible: true, title, message, type });
+    if (parentShowAlert) {
+      parentShowAlert(title, message, type as 'success' | 'error');
+    } else {
+      setLocalAlert({ visible: true, title, message, type });
+    }
   };
 
   const hideAlert = () => {
-    setAlert((prev) => ({ ...prev, visible: false }));
+    setLocalAlert((prev) => ({ ...prev, visible: false }));
   };
-
-  // Get device state from store
-  const rooms = useSmartHomeStore((state) => state.rooms);
-  
-  const currentDevice = React.useMemo(() => {
-    return rooms
-      .flatMap((room) => room.devices['smart-ac'] || [])
-      .find((d) => d.id === deviceId);
-  }, [rooms, deviceId]);
-
-  const acSettings = currentDevice?.acSettings;
 
   // Local state for UI (synced with store)
   const [acTemp, setAcTemp] = useState(acSettings?.temperature || 24);
   const [acMode, setAcMode] = useState<
     'cool' | 'heat' | 'heat_cool' | 'dry' | 'fan' | 'fan_only'
   >((acSettings?.mode === 'auto' ? 'heat_cool' : acSettings?.mode) as any || 'cool');
-  const [acFanSpeed, setAcFanSpeed] = useState(acSettings?.fanSpeed || 'auto');
+  const [acFanSpeed, setAcFanSpeed] = useState<'auto' | 'low' | 'med' | 'high' | 'medium'>(
+    acSettings?.fanSpeed === 'med' ? 'medium' : acSettings?.fanSpeed || 'auto'
+  );
   const [swingUpDown, setSwingUpDown] = useState(acSettings?.swingV || false);
   const [swingLeftRight, setSwingLeftRight] = useState(acSettings?.swingH || false);
 
@@ -339,10 +341,10 @@ export const SmartAcControls: React.FC<SmartAcControlsProps> = ({
       </View>
 
       <CustomAlert
-        visible={alert.visible}
-        title={alert.title}
-        message={alert.message}
-        type={alert.type}
+        visible={localAlert.visible}
+        title={localAlert.title}
+        message={localAlert.message}
+        type={localAlert.type}
         onClose={hideAlert}
       />
     </View>

@@ -20,6 +20,7 @@ interface DeviceHeaderProps {
   deviceId: string;
   deviceName: string;
   isConnected: boolean;
+  showPowerButton?: boolean;
 }
 
 export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
@@ -27,6 +28,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
   deviceId,
   deviceName,
   isConnected,
+  showPowerButton = true,
 }) => {
   const router = useRouter();
   const DeviceIcon = deviceIcons[deviceType];
@@ -44,13 +46,10 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
 
   const isActive = currentDevice?.isActive || false;
   const acSettings = currentDevice?.acSettings;
-  const acPower = acSettings?.online || false; // Note: using online as proxy for power in header if needed, or just isActive
-  // Actually, for AC, isActive is usually the power state too in our store model.
   
   // Handlers
   const toggleDevice = useSmartHomeStore((state) => state.toggleDevice);
   const setAcPowerStore = useSmartHomeStore((state) => state.setAcPower);
-
   const setAcModeStore = useSmartHomeStore((state) => state.setAcMode);
 
   const handlePowerToggle = () => {
@@ -119,18 +118,20 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
             </Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.toggleButton,
-            isActive && styles.toggleButtonActive,
-          ]}
-          onPress={handlePowerToggle}
-        >
-          <Power
-            size={28}
-            color={isActive ? 'white' : '#94a3b8'}
-          />
-        </TouchableOpacity>
+        {showPowerButton && (
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              isActive && styles.toggleButtonActive,
+            ]}
+            onPress={handlePowerToggle}
+          >
+            <Power
+              size={28}
+              color={isActive ? 'white' : '#94a3b8'}
+            />
+          </TouchableOpacity>
+        )}
       </View>
     </>
   );

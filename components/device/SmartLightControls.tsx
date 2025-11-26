@@ -17,25 +17,22 @@ import {
   Plus,
 } from 'lucide-react-native';
 import Slider from '@react-native-community/slider';
+import { Device } from '@/constants/defaultData';
 import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 
 interface SmartLightControlsProps {
-  deviceId: string;
+  device: Device;
   isConnected: boolean;
+  showAlert?: (title: string, message: string, type: 'success' | 'error') => void;
 }
 
 export const SmartLightControls: React.FC<SmartLightControlsProps> = ({
-  deviceId,
+  device,
   isConnected,
+  showAlert,
 }) => {
-  // Get device state from store
-  const rooms = useSmartHomeStore((state) => state.rooms);
-  
-  const currentDevice = React.useMemo(() => {
-    return rooms
-      .flatMap((room) => room.devices['smart-light'] || [])
-      .find((d) => d.id === deviceId);
-  }, [rooms, deviceId]);
+  const deviceId = device.id;
+  const currentDevice = device;
 
   const [brightness, setBrightness] = useState<number>(0);
   const [color, setColor] = useState({ r: 255, g: 255, b: 255 });

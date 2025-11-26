@@ -1,4 +1,4 @@
-import { Lightbulb, Wind, Tv, Monitor, Blinds, Activity } from 'lucide-react-native';
+import { Lightbulb, Wind, Tv, Monitor, Blinds, Activity, Camera } from 'lucide-react-native';
 
 // Authentication types
 export interface User {
@@ -13,7 +13,6 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
 }
-
 // Device type definitions
 export type DeviceType =
   | 'smart-light'
@@ -21,6 +20,7 @@ export type DeviceType =
   | 'smart-tv'
   | 'air-purifier'
   | 'smart-curtain'
+  | 'smart-camera'
   | 'sensor';
 
 // Device interface
@@ -44,6 +44,10 @@ export interface Device {
   effect?: string;
   effect_list?: string[];
   supported_features?: number;
+  // Camera-specific properties
+  snapshotUrl?: string;
+  accessToken?: string;
+  attributes?: any;
 }
 
 // Room interface
@@ -61,6 +65,7 @@ export const deviceIcons: Record<DeviceType, typeof Lightbulb> = {
   'smart-tv': Tv,
   'air-purifier': Monitor,
   'smart-curtain': Blinds,
+  'smart-camera': Camera,
   'sensor': Activity,
 } as const;
 

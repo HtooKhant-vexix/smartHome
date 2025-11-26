@@ -164,6 +164,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
           'smart-tv': [],
           'air-purifier': [],
           'smart-curtain': [],
+          'smart-camera': [],
           'sensor': [],
         };
 
@@ -174,6 +175,7 @@ export const useSmartHomeStore = create<SmartHomeState>()(
             name: entity.attributes.friendly_name || entity.entity_id,
             isActive: domain === 'climate' ? entity.state !== 'off' : entity.state === 'on',
             // Store raw entity data if needed later
+            attributes: entity.attributes,
           };
 
           if (domain === 'light' || domain === 'switch') {
@@ -192,6 +194,10 @@ export const useSmartHomeStore = create<SmartHomeState>()(
              haRoom.devices['smart-tv']?.push(device);
           } else if (domain === 'cover') {
              haRoom.devices['smart-curtain']?.push(device);
+          } else if (domain === 'camera') {
+             device.snapshotUrl = entity.attributes.entity_picture;
+             device.accessToken = entity.attributes.access_token;
+             haRoom.devices['smart-camera']?.push(device);
           } else if (domain === 'sensor' || domain === 'binary_sensor') {
              haRoom.devices['sensor']?.push(device);
           }

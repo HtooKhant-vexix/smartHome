@@ -15,6 +15,7 @@ import { useSmartHomeStore } from '@/store/useSmartHomeStore';
 import { DeviceHeader } from '@/components/device/DeviceHeader';
 import { SmartAcControls } from '@/components/device/SmartAcControls';
 import { SmartLightControls } from '@/components/device/SmartLightControls';
+import { SmartCameraControls } from '@/components/device/SmartCameraControls';
 
 export default function DeviceDetailScreen() {
   const { type, id } = useLocalSearchParams();
@@ -42,7 +43,6 @@ export default function DeviceDetailScreen() {
   }, [currentDevice?.name]);
 
   const isConnected = useSmartHomeStore((state) => state.isConnected);
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -51,13 +51,20 @@ export default function DeviceDetailScreen() {
           deviceId={deviceId}
           deviceName={deviceName}
           isConnected={isConnected}
+          showPowerButton={deviceType !== 'smart-camera'}
         />
 
         {/* Device Specific Controls */}
-        {deviceType === 'smart-ac' ? (
-          <SmartAcControls deviceId={deviceId} isConnected={isConnected} />
+        {!currentDevice ? (
+           <View style={styles.placeholderContainer}>
+            <Text style={styles.placeholderText}>Device not found</Text>
+          </View>
+        ) : deviceType === 'smart-ac' ? (
+          <SmartAcControls device={currentDevice} isConnected={isConnected} />
         ) : deviceType === 'smart-light' ? (
-          <SmartLightControls deviceId={deviceId} isConnected={isConnected} />
+          <SmartLightControls device={currentDevice} isConnected={isConnected} />
+        ) : deviceType === 'smart-camera' ? (
+          <SmartCameraControls device={currentDevice} />
         ) : (
           <View style={styles.placeholderContainer}>
             <Text style={styles.placeholderText}>
