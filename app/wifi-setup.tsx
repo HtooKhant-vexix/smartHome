@@ -7,24 +7,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Platform,
-  PermissionsAndroid,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Wifi,
-  Lock,
-  Send,
-  RefreshCw,
-  X,
-  Bluetooth,
-  BluetoothConnected,
-  Eye,
-  EyeOff,
-} from 'lucide-react-native';
-import { bluetoothService } from '../services/bluetooth';
-import { Device } from 'react-native-ble-plx';
+import { Wifi, Lock, Send, Eye, EyeOff } from 'lucide-react-native';
+// Bluetooth service removed
 import NetInfo from '@react-native-community/netinfo';
 // import { CustomAlert } from '../../_components/CustomAlert';
 import { CustomAlert } from '@/components/CustomAlert';
@@ -34,12 +21,7 @@ export default function WifiSetupScreen() {
   const [password, setPassword] = useState('');
   const [port, setPort] = useState('1883');
   const [showPassword, setShowPassword] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [connectedDevices, setConnectedDevices] = useState<Device[]>([]);
-  const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(
-    null
-  );
+  // Bluetooth-related state removed
   const [isSending, setIsSending] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [alert, setAlert] = useState<{
@@ -57,46 +39,11 @@ export default function WifiSetupScreen() {
   useEffect(() => {
     const initialize = async () => {
       try {
-        // Request necessary permissions
-        if (Platform.OS === 'android') {
-          const permissions = [
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          ];
-
-          if (Number(Platform.Version) >= 31) {
-            permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
-            permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
-          }
-
-          const results = await PermissionsAndroid.requestMultiple(permissions);
-          const allGranted = Object.values(results).every(
-            (result) => result === PermissionsAndroid.RESULTS.GRANTED
-          );
-
-          if (!allGranted) {
-            showAlert('Error', 'Required permissions not granted', 'error');
-            return;
-          }
-        }
-
         // Get current Wi-Fi SSID
         const state = await NetInfo.fetch();
         if (state.type === 'wifi' && state.details?.ssid) {
           setSsid(state.details.ssid);
         }
-
-        // Initialize Bluetooth
-        const hasPermissions = await bluetoothService.requestPermissions();
-        if (!hasPermissions) {
-          showAlert('Error', 'Bluetooth permissions not granted', 'error');
-          return;
-        }
-
-        // Update connected devices list
-        setConnectedDevices(bluetoothService.getConnectedDevices());
-
-        // Start scanning for devices
-        startScan();
       } catch (error) {
         console.error('Initialization error:', error);
         showAlert('Error', 'Failed to initialize', 'error');
@@ -104,70 +51,11 @@ export default function WifiSetupScreen() {
     };
 
     initialize();
-
-    return () => {
-      bluetoothService.stopScan();
-    };
   }, []);
 
-  const startScan = async () => {
-    try {
-      setIsScanning(true);
-      setDevices([]);
-      await bluetoothService.startScan();
+  // Bluetooth functions removed
 
-      // Update devices list every second while scanning
-      const interval = setInterval(() => {
-        setDevices(bluetoothService.getDiscoveredDevices());
-      }, 1000);
-
-      // Clear interval after 10 seconds
-      setTimeout(() => {
-        clearInterval(interval);
-        setIsScanning(false);
-      }, 10000);
-    } catch (error) {
-      console.error('Error starting scan:', error);
-      setIsScanning(false);
-      showAlert('Error', 'Failed to start scanning', 'error');
-    }
-  };
-
-  const connectToDevice = async (device: Device) => {
-    try {
-      setConnectingDeviceId(device.id);
-      const connected = await bluetoothService.connectToDevice(device.id);
-      if (connected) {
-        setConnectedDevices(bluetoothService.getConnectedDevices());
-        showAlert('Success', 'Device connected successfully', 'success');
-      } else {
-        showAlert('Error', 'Failed to connect to device', 'error');
-      }
-    } catch (error) {
-      console.error('Error connecting to device:', error);
-      showAlert('Error', 'Failed to connect to device', 'error');
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
-
-  const disconnectDevice = async (deviceId: string) => {
-    try {
-      setConnectingDeviceId(deviceId);
-      await bluetoothService.disconnectDevice(deviceId);
-      setConnectedDevices((prev) =>
-        prev.filter((device) => device.id !== deviceId)
-      );
-      showAlert('Success', 'Device disconnected successfully', 'success');
-    } catch (error) {
-      console.error('Error disconnecting device:', error);
-      showAlert('Error', 'Failed to disconnect device', 'error');
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
-
-  const sendWifiCredentials = async (deviceId?: string) => {
+  const saveWifiCredentials = async () => {
     if (!ssid || !password) {
       showAlert('Error', 'Please enter both SSID and password', 'error');
       return;
@@ -185,64 +73,13 @@ export default function WifiSetupScreen() {
         },
       };
 
-      // Convert to JSON string
-      const jsonData = JSON.stringify(wifiConfigData);
+      // Save configuration (you can implement your own storage logic here)
+      console.log('WiFi Configuration:', wifiConfigData);
 
-      // If deviceId is provided, send to that specific device
-      if (deviceId) {
-        const success = await bluetoothService.sendData(deviceId, jsonData);
-        if (success) {
-          showAlert(
-            'Success',
-            'WiFi configuration sent successfully',
-            'success'
-          );
-        } else {
-          showAlert('Error', 'Failed to send WiFi configuration', 'error');
-        }
-      } else {
-        // Send to all connected devices
-        const results = await Promise.all(
-          connectedDevices.map(async (device) => {
-            try {
-              const success = await bluetoothService.sendData(
-                device.id,
-                jsonData
-              );
-              return { deviceId: device.id, success };
-            } catch (error) {
-              console.error(`Error sending to device ${device.id}:`, error);
-              return { deviceId: device.id, success: false };
-            }
-          })
-        );
-
-        const successfulSends = results.filter(
-          (result) => result.success
-        ).length;
-        if (successfulSends === connectedDevices.length) {
-          showAlert(
-            'Success',
-            'WiFi configuration sent to all devices successfully',
-            'success'
-          );
-        } else if (successfulSends > 0) {
-          showAlert(
-            'Partial Success',
-            `WiFi configuration sent to ${successfulSends} out of ${connectedDevices.length} devices`,
-            'info'
-          );
-        } else {
-          showAlert(
-            'Error',
-            'Failed to send WiFi configuration to any device',
-            'error'
-          );
-        }
-      }
+      showAlert('Success', 'WiFi configuration saved successfully', 'success');
     } catch (error) {
-      console.error('Error sending WiFi config:', error);
-      showAlert('Error', 'Failed to send WiFi configuration', 'error');
+      console.error('Error saving WiFi config:', error);
+      showAlert('Error', 'Failed to save WiFi configuration', 'error');
     } finally {
       setIsSending(false);
     }
@@ -268,13 +105,10 @@ export default function WifiSetupScreen() {
   const onRefresh = async () => {
     try {
       setIsRefreshing(true);
-      // Update connected devices list
-      setConnectedDevices(bluetoothService.getConnectedDevices());
-      // Start a new scan
-      await startScan();
+      // Refresh functionality simplified
     } catch (error) {
       console.error('Error refreshing:', error);
-      showAlert('Error', 'Failed to refresh devices', 'error');
+      showAlert('Error', 'Failed to refresh', 'error');
     } finally {
       setIsRefreshing(false);
     }
@@ -356,155 +190,25 @@ export default function WifiSetupScreen() {
           </View>
         </View>
 
-        {/* Connected Devices */}
-        {connectedDevices.length > 0 && (
-          <View style={styles.deviceSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Connected Devices</Text>
-              <View style={styles.headerRight}>
-                <Text style={styles.connectedCount}>
-                  {connectedDevices.length} device
-                  {connectedDevices.length !== 1 ? 's' : ''}
-                </Text>
-                {/* <TouchableOpacity
-                  style={[
-                    styles.refreshButton,
-                    isRefreshing && styles.refreshButtonActive,
-                  ]}
-                  onPress={onRefresh}
-                  disabled={isRefreshing}
-                >
-                  {isRefreshing ? (
-                    <ActivityIndicator color="#2563eb" />
-                  ) : (
-                    <RefreshCw size={20} color="#2563eb" />
-                  )}
-                </TouchableOpacity> */}
-              </View>
-            </View>
-            <View style={styles.connectedDevices}>
-              {connectedDevices.map((device) => (
-                <View key={device.id} style={styles.connectedDeviceInfo}>
-                  <View style={styles.deviceIcon}>
-                    <BluetoothConnected size={24} color="#22c55e" />
-                  </View>
-                  <View style={styles.deviceDetails}>
-                    <Text style={styles.deviceName}>
-                      {device.name || 'Unknown Device'}
-                    </Text>
-                    <Text style={styles.deviceId}>{device.id}</Text>
-                  </View>
-                  <View style={styles.deviceActions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.sendButton,
-                        (!ssid || !password || isSending) &&
-                          styles.sendButtonDisabled,
-                      ]}
-                      onPress={() => sendWifiCredentials(device.id)}
-                      disabled={!ssid || !password || isSending}
-                    >
-                      {isSending ? (
-                        <ActivityIndicator color="#ffffff" />
-                      ) : (
-                        <Send size={20} color="#ffffff" />
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.disconnectButton,
-                        connectingDeviceId === device.id &&
-                          styles.disconnectButtonActive,
-                      ]}
-                      onPress={() => disconnectDevice(device.id)}
-                      disabled={connectingDeviceId === device.id}
-                    >
-                      {connectingDeviceId === device.id ? (
-                        <ActivityIndicator color="#ffffff" />
-                      ) : (
-                        <X size={20} color="#ef4444" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-            {/* Send to All Button */}
-            <TouchableOpacity
-              style={[
-                styles.sendToAllButton,
-                (!ssid || !password || isSending) && styles.sendButtonDisabled,
-              ]}
-              onPress={() => sendWifiCredentials()}
-              disabled={!ssid || !password || isSending}
-            >
-              {isSending ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <>
-                  <Send size={20} color="#ffffff" style={styles.buttonIcon} />
-                  <Text style={styles.buttonText}>Send to All Devices</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Available Devices */}
-        <View style={styles.deviceSection1}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Available Devices</Text>
-            <TouchableOpacity
-              style={[styles.scanButton, isScanning && styles.scanningButton]}
-              onPress={startScan}
-              disabled={isScanning}
-            >
-              {isScanning ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <RefreshCw size={20} color="#ffffff" />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {devices.length > 0 ? (
-            <View style={styles.deviceList}>
-              {devices.map((device) => (
-                <TouchableOpacity
-                  key={device.id}
-                  style={[
-                    styles.deviceItem,
-                    connectingDeviceId === device.id &&
-                      styles.deviceItemDisabled,
-                  ]}
-                  onPress={() => connectToDevice(device)}
-                  disabled={connectingDeviceId === device.id}
-                >
-                  <View style={styles.deviceIcon}>
-                    <Bluetooth size={24} color="#2563eb" />
-                  </View>
-                  <View style={styles.deviceInfo}>
-                    <Text style={styles.deviceName}>
-                      {device.name || 'Unknown Device'}
-                    </Text>
-                    <Text style={styles.deviceId}>{device.id}</Text>
-                  </View>
-                  {connectingDeviceId === device.id ? (
-                    <ActivityIndicator color="#2563eb" />
-                  ) : (
-                    <Bluetooth size={24} color="#2563eb" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.noDevices}>
-              <Text style={styles.noDevicesText}>No devices found</Text>
-              <Text style={styles.noDevicesSubtext}>
-                Make sure your ESP32 is in pairing mode
-              </Text>
-            </View>
-          )}
+        {/* Save Configuration Button */}
+        <View style={styles.saveSection}>
+          <TouchableOpacity
+            style={[
+              styles.saveButton,
+              (!ssid || !password || isSending) && styles.saveButtonDisabled,
+            ]}
+            onPress={saveWifiCredentials}
+            disabled={!ssid || !password || isSending}
+          >
+            {isSending ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Send size={20} color="#ffffff" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Save WiFi Configuration</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -734,5 +438,20 @@ const styles = StyleSheet.create({
   },
   refreshButtonActive: {
     backgroundColor: '#1e40af',
+  },
+  saveSection: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 12,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
 });

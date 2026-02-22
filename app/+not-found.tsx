@@ -9,7 +9,9 @@ export default function NotFoundScreen() {
       <View style={styles.container}>
         <Home size={64} color="#2563eb" />
         <Text style={styles.title}>Page Not Found</Text>
-        <Text style={styles.text}>This screen doesn't exist in your smart home.</Text>
+        <Text style={styles.text}>
+          This screen doesn&apos;t exist in your smart home.
+        </Text>
         <Link href="/" style={styles.link}>
           <Text style={styles.linkText}>Go to home screen!</Text>
         </Link>

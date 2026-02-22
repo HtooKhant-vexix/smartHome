@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
-  ActivityIndicator,
-  Alert,
   RefreshControl,
-  Animated,
   Dimensions,
-  TextInput,
-  Modal,
-  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -28,34 +22,13 @@ import {
   Lock,
   Globe,
   Palette,
-  Bluetooth,
-  BluetoothConnected,
-  RefreshCw,
-  X,
-  Signal,
-  WifiOff,
-  PowerOff,
-  Radio,
-  Send,
-  FileJson,
-  FileText,
-  Wifi as WifiIcon,
-  Router,
-  Wifi as WifiIcon2,
-  Network,
-  Server,
-  Plus,
 } from 'lucide-react-native';
-import { bluetoothService } from '../../services/bluetooth';
-import { Device } from 'react-native-ble-plx';
+// Bluetooth service removed
 import { CustomAlert } from '../../components/CustomAlert';
+import { NetworkDebugger } from '../../components/NetworkDebugger';
 // Paho no longer needed here; use centralized mqttService
 import { useRouter } from 'expo-router';
-import {
-  mqttService,
-  MqttConfig,
-  MqttConnectionStatus,
-} from '../../services/mqttService';
+// Removed unused MQTT imports
 
 const { width } = Dimensions.get('window');
 
@@ -113,31 +86,15 @@ function SettingSection({ title, children }: SettingSectionProps) {
   );
 }
 
-// MQTT Connection interface for UI
-interface MqttConnectionUI {
-  id: string;
-  host: string;
-  port: number;
-  clientId: string;
-  username?: string;
-  password?: string;
-  status: MqttConnectionStatus;
-  messages: string[];
-  topic: string;
-  message: string;
-}
+// Removed unused MQTT interface
+
+// Removed MQTTBridgeSection component
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const [autoMode, setAutoMode] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [connectingDeviceId, setConnectingDeviceId] = useState<string | null>(
-    null
-  );
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [connectedDevices, setConnectedDevices] = useState<Device[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [alert, setAlert] = useState<{
     visible: boolean;
@@ -150,206 +107,27 @@ export default function SettingsScreen() {
     message: '',
     type: 'info',
   });
-  const [mqttConnected, setMqttConnected] = useState(false);
-  const [mqttMessages, setMqttMessages] = useState<string[]>([]);
-  const [mqttTopic, setMqttTopic] = useState('detpos/topic');
-  const [mqttMessage, setMqttMessage] = useState('');
-  const [mqttStatus, setMqttStatus] = useState<
-    'disconnected' | 'connecting' | 'connected'
-  >('disconnected');
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [wifiConfig, setWifiConfig] = useState({
-    ssid: '',
-    password: '',
-    port: '1883',
-  });
-  const [isSending, setIsSending] = useState(false);
-  const [isBluetoothReady, setIsBluetoothReady] = useState(false);
-  const [wifiNetworks, setWifiNetworks] = useState<
-    Array<{ ssid: string; rssi: number }>
-  >([]);
-  const [isWifiScanning, setIsWifiScanning] = useState(false);
-  const [showWifiScan, setShowWifiScan] = useState(false);
-  const [networkDevices, setNetworkDevices] = useState<
-    Array<{
-      ip: string;
-      mac: string;
-      hostname: string;
-      vendor: string;
-    }>
-  >([]);
-  const [isScanningNetwork, setIsScanningNetwork] = useState(false);
-  const [tcpStatus, setTcpStatus] = useState<
-    'disconnected' | 'connecting' | 'connected'
-  >('disconnected');
-  const [tcpConnected, setTcpConnected] = useState(false);
-  const [tcpHost, setTcpHost] = useState('127.0.0.1');
-  const [tcpPort, setTcpPort] = useState('1883');
-  const [tcpTopic, setTcpTopic] = useState('office/ac/control');
-  const [tcpMessage, setTcpMessage] = useState('');
-  const [tcpMessages, setTcpMessages] = useState<string[]>([]);
-  const tcpClient = useRef<any>(null);
+  // Removed unused state variables
 
-  // Device Control States
-  const [deviceStates, setDeviceStates] = useState<{ [key: string]: boolean }>(
-    {}
-  );
-  const [deviceTopics, setDeviceTopics] = useState<{ [key: string]: string }>(
-    {}
-  );
-  const [selectedDeviceForControl, setSelectedDeviceForControl] = useState<
-    string | null
-  >(null);
+  // Removed unused device control and MQTT state
 
-  const [mqttConnections, setMqttConnections] = useState<MqttConnectionUI[]>(
-    []
-  );
-  const [selectedMqttConnection, setSelectedMqttConnection] = useState<
-    string | null
-  >(null);
-  const [mqttConfig, setMqttConfig] = useState<MqttConfig>(
-    mqttService.getConfig()
-  );
-
-  // Device Control Functions
-  const toggleDeviceState = async (deviceId: string) => {
-    try {
-      const newState = !deviceStates[deviceId];
-      setDeviceStates((prev) => ({
-        ...prev,
-        [deviceId]: newState,
-      }));
-
-      // Prepare control message
-      const controlMessage = {
-        deviceId,
-        state: newState ? 'ON' : 'OFF',
-        type: 'control',
-      };
-
-      // Send via centralized MQTT service if connected
-      if (mqttService.isConnected()) {
-        const topic = deviceTopics[deviceId] || `devices/${deviceId}/control`;
-        const success = mqttService.publishJson(topic, controlMessage);
-
-        if (success) {
-          setMqttMessages((prev) => [
-            ...prev,
-            `[${topic}] Sent: ${JSON.stringify(controlMessage)}`,
-          ]);
-        }
-      }
-
-      showAlert(
-        'Success',
-        `Device ${newState ? 'turned ON' : 'turned OFF'}`,
-        'success'
-      );
-    } catch (error) {
-      console.error('Error toggling device state:', error);
-      showAlert('Error', 'Failed to toggle device state', 'error');
-    }
-  };
-
-  const addDeviceControl = (deviceId: string, topic: string) => {
-    setDeviceStates((prev) => ({
-      ...prev,
-      [deviceId]: false,
-    }));
-    setDeviceTopics((prev) => ({
-      ...prev,
-      [deviceId]: topic,
-    }));
-  };
-
-  const removeDeviceControl = (deviceId: string) => {
-    setDeviceStates((prev) => {
-      const newStates = { ...prev };
-      delete newStates[deviceId];
-      return newStates;
-    });
-    setDeviceTopics((prev) => {
-      const newTopics = { ...prev };
-      delete newTopics[deviceId];
-      return newTopics;
-    });
-  };
+  // Removed unused device control functions
 
   useEffect(() => {
-    const initializeBluetooth = async () => {
-      try {
-        const hasPermissions = await bluetoothService.requestPermissions();
-        setIsBluetoothReady(hasPermissions);
-        if (hasPermissions) {
-          setConnectedDevices(bluetoothService.getConnectedDevices());
-        }
-      } catch (error) {
-        console.error('Error initializing Bluetooth:', error);
-        showAlert('Error', 'Failed to initialize Bluetooth', 'error');
-      }
-    };
-
-    initializeBluetooth();
-
-    return () => {
-      bluetoothService.stopScan();
-    };
+    // Bluetooth initialization removed
   }, []);
-
-  const startScan = async () => {
-    if (!isBluetoothReady) {
-      showAlert('Error', 'Bluetooth is not ready', 'error');
-      return;
-    }
-
-    try {
-      setIsScanning(true);
-      setDevices([]);
-      await bluetoothService.startScan();
-      // Update devices list every second while scanning
-      const interval = setInterval(() => {
-        setDevices(bluetoothService.getDiscoveredDevices());
-      }, 1000);
-      // Clear interval after 10 seconds
-      setTimeout(() => {
-        clearInterval(interval);
-        setIsScanning(false);
-      }, 10000);
-    } catch (error) {
-      console.error('Error starting scan:', error);
-      setIsScanning(false);
-      showAlert('Error', 'Failed to start scanning', 'error');
-    }
-  };
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      // Clear all connection states
-      setConnectingDeviceId(null);
-
-      // Check and reinitialize Bluetooth if needed
-      if (!isBluetoothReady) {
-        const hasPermissions = await bluetoothService.requestPermissions();
-        setIsBluetoothReady(hasPermissions);
-        if (!hasPermissions) {
-          showAlert('Error', 'Bluetooth permissions not granted', 'error');
-          return;
-        }
-      }
-
-      // Refresh the device list
-      await startScan();
-      // Update connected devices list
-      setConnectedDevices(bluetoothService.getConnectedDevices());
+      // Refresh functionality simplified
     } catch (error) {
       console.error('Error refreshing:', error);
-      showAlert('Error', 'Failed to refresh devices', 'error');
+      showAlert('Error', 'Failed to refresh', 'error');
     } finally {
       setRefreshing(false);
     }
-  }, [isBluetoothReady]);
+  }, []);
 
   const showAlert = (
     title: string,
@@ -368,426 +146,11 @@ export default function SettingsScreen() {
     setAlert((prev) => ({ ...prev, visible: false }));
   };
 
-  const connectToDevice = async (device: Device) => {
-    try {
-      setConnectingDeviceId(device.id);
-      const connected = await bluetoothService.connectToDevice(device.id);
-      if (connected) {
-        setConnectedDevices(bluetoothService.getConnectedDevices());
-        showAlert('Success', 'Device connected successfully', 'success');
-      } else {
-        showAlert('Error', 'Failed to connect to device', 'error');
-      }
-    } catch (error) {
-      console.error('Error connecting to device:', error);
-      showAlert('Error', 'Failed to connect to device', 'error');
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
+  // Removed unused MQTT and device functions
 
-  const disconnectDevice = async (deviceId: string) => {
-    try {
-      setConnectingDeviceId(deviceId);
-      await bluetoothService.disconnectDevice(deviceId);
-      setConnectedDevices((prev) =>
-        prev.filter((device) => device.id !== deviceId)
-      );
-      showAlert('Success', 'Device disconnected successfully', 'success');
-    } catch (error) {
-      console.error('Error disconnecting device:', error);
-      showAlert('Error', 'Failed to disconnect device', 'error');
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
+  // Removed unused WiFi and network scanning functions
 
-  const disconnectAllDevices = async () => {
-    try {
-      setConnectingDeviceId('all');
-      await bluetoothService.disconnectAllDevices();
-      setConnectedDevices([]);
-      showAlert('Success', 'All devices disconnected successfully', 'success');
-    } catch (error) {
-      console.error('Error disconnecting all devices:', error);
-      showAlert('Error', 'Failed to disconnect all devices', 'error');
-    } finally {
-      setConnectingDeviceId(null);
-    }
-  };
-
-  const connectMQTT = async () => {
-    try {
-      setMqttStatus('connecting');
-      await mqttService.connect();
-      // default test subscription
-      mqttService.subscribe('detpos/#');
-      setMqttStatus('connected');
-      setMqttConnected(true);
-      showAlert('Success', 'MQTT Connected successfully', 'success');
-      // Hook one-time message logger for settings page
-      const handler = (topic: string, payload: string) => {
-        try {
-          const json = JSON.parse(payload);
-          setMqttMessages((prev) => [
-            ...prev,
-            `[${topic}] Received: ${JSON.stringify(json)}`,
-          ]);
-        } catch {
-          setMqttMessages((prev) => [
-            ...prev,
-            `[${topic}] Received: ${payload}`,
-          ]);
-        }
-      };
-      // Note: rely on centralized listeners; duplicate registrations are fine in this scope
-      mqttService.on('message', handler as any);
-    } catch (err) {
-      setMqttStatus('disconnected');
-      setMqttConnected(false);
-      showAlert('Error', 'Failed to connect to MQTT broker', 'error');
-      console.error('MQTT Connection failed:', err);
-    }
-  };
-
-  const disconnectMQTT = () => {
-    mqttService.disconnect();
-    setMqttStatus('disconnected');
-    setMqttConnected(false);
-    showAlert('Success', 'MQTT Disconnected successfully', 'success');
-  };
-
-  // Connection lost handled by centralized mqttService
-
-  const publishMessage = () => {
-    if (!mqttConnected) {
-      showAlert('Error', 'MQTT not connected', 'error');
-      return;
-    }
-
-    try {
-      // Store current message and topic for logging
-      const currentMessage = mqttMessage;
-      const currentTopic = mqttTopic;
-
-      // Immediately update UI to show message as sending
-      setMqttMessages((prev) => [
-        ...prev,
-        `[${currentTopic}] Sending: ${currentMessage}`,
-      ]);
-      setMqttMessage(''); // Clear the message input immediately
-
-      // Send via centralized service
-      mqttService.publish(currentTopic, currentMessage);
-
-      // Add success message after sending
-      setMqttMessages((prev) => [
-        ...prev,
-        `[${currentTopic}] Sent successfully`,
-      ]);
-    } catch (error) {
-      showAlert('Error', 'Failed to publish message', 'error');
-      console.error('Publish error:', error);
-      // Add error message to the log
-      setMqttMessages((prev) => [
-        ...prev,
-        `[${mqttTopic}] Error: Failed to publish message`,
-      ]);
-    }
-  };
-
-  const handleDevicePress = (device: Device) => {
-    console.log('Device pressed:', device.id);
-    setSelectedDevice(device);
-    setIsModalVisible(true);
-  };
-
-  const sendWifiConfig = async () => {
-    if (!selectedDevice) {
-      showAlert('Error', 'No device selected', 'error');
-      return;
-    }
-
-    try {
-      setIsSending(true);
-
-      // Format the WiFi configuration data
-      const wifiConfigData = {
-        wifiConfig: {
-          ssid: wifiConfig.ssid,
-          password: wifiConfig.password,
-          port: parseInt(wifiConfig.port),
-        },
-      };
-
-      // Convert to JSON string
-      const jsonData = JSON.stringify(wifiConfigData);
-
-      // Send the data
-      const success = await bluetoothService.sendData(
-        selectedDevice.id,
-        jsonData
-      );
-
-      if (success) {
-        showAlert('Success', 'WiFi configuration sent successfully', 'success');
-        setIsModalVisible(false);
-      } else {
-        showAlert('Error', 'Failed to send WiFi configuration', 'error');
-      }
-    } catch (error) {
-      console.error('Error sending WiFi config:', error);
-      showAlert('Error', 'Failed to send WiFi configuration', 'error');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const startWifiScan = async () => {
-    try {
-      setIsWifiScanning(true);
-      // Simulate WiFi scanning with mock data
-      setTimeout(() => {
-        const mockNetworks = [
-          { ssid: 'Home WiFi', rssi: -45 },
-          { ssid: 'Neighbor WiFi', rssi: -65 },
-          { ssid: 'Guest Network', rssi: -55 },
-          { ssid: 'Office WiFi', rssi: -70 },
-        ];
-        setWifiNetworks(mockNetworks);
-        setIsWifiScanning(false);
-      }, 2000);
-    } catch (error) {
-      console.error('Error scanning WiFi:', error);
-      showAlert('Error', 'Failed to scan WiFi networks', 'error');
-      setIsWifiScanning(false);
-    }
-  };
-
-  const getWifiSignalStrength = (rssi: number) => {
-    if (rssi >= -50) return 'Excellent';
-    if (rssi >= -60) return 'Good';
-    if (rssi >= -70) return 'Fair';
-    return 'Poor';
-  };
-
-  const getWifiSignalColor = (rssi: number) => {
-    if (rssi >= -50) return '#22c55e';
-    if (rssi >= -60) return '#84cc16';
-    if (rssi >= -70) return '#eab308';
-    return '#ef4444';
-  };
-
-  const startNetworkScan = async () => {
-    try {
-      setIsScanningNetwork(true);
-      // Simulate network scanning with mock data
-      setTimeout(() => {
-        const mockDevices = [
-          {
-            ip: '192.168.1.1',
-            mac: '00:11:22:33:44:55',
-            hostname: 'Router',
-            vendor: 'TP-Link',
-          },
-          {
-            ip: '192.168.1.2',
-            mac: 'AA:BB:CC:DD:EE:FF',
-            hostname: 'Smart TV',
-            vendor: 'Samsung',
-          },
-          {
-            ip: '192.168.1.3',
-            mac: '12:34:56:78:90:AB',
-            hostname: 'ESP32 Device',
-            vendor: 'Espressif',
-          },
-          {
-            ip: '192.168.1.4',
-            mac: 'CD:EF:12:34:56:78',
-            hostname: 'Smart Bulb',
-            vendor: 'Philips Hue',
-          },
-        ];
-        setNetworkDevices(mockDevices);
-        setIsScanningNetwork(false);
-      }, 3000);
-    } catch (error) {
-      console.error('Error scanning network:', error);
-      showAlert('Error', 'Failed to scan network devices', 'error');
-      setIsScanningNetwork(false);
-    }
-  };
-
-  const getDeviceIcon = (vendor: string) => {
-    switch (vendor.toLowerCase()) {
-      case 'tp-link':
-      case 'router':
-        return <Router size={24} color="#2563eb" />;
-      case 'samsung':
-      case 'smart tv':
-        return <Smartphone size={24} color="#2563eb" />;
-      case 'espressif':
-      case 'esp32':
-        return <Server size={24} color="#2563eb" />;
-      default:
-        return <Network size={24} color="#2563eb" />;
-    }
-  };
-
-  const addMqttConnection = () => {
-    const newConnection: MqttConnectionUI = {
-      id: `mqtt_${Date.now()}`,
-      host: mqttConfig.host,
-      port: mqttConfig.port,
-      clientId: mqttConfig.clientId,
-      username: mqttConfig.username,
-      password: mqttConfig.password,
-      status: 'disconnected',
-      messages: [],
-      topic: 'test/topic',
-      message: '',
-    };
-    setMqttConnections((prev) => [...prev, newConnection]);
-    setSelectedMqttConnection(newConnection.id);
-  };
-
-  const removeMqttConnection = (id: string) => {
-    setMqttConnections((prev) => prev.filter((conn) => conn.id !== id));
-    if (selectedMqttConnection === id) {
-      setSelectedMqttConnection(null);
-    }
-  };
-
-  const updateMqttConnection = (
-    id: string,
-    updates:
-      | Partial<MqttConnectionUI>
-      | ((conn: MqttConnectionUI) => Partial<MqttConnectionUI>)
-  ) => {
-    setMqttConnections((prev) =>
-      prev.map((conn) =>
-        conn.id === id
-          ? {
-              ...conn,
-              ...(typeof updates === 'function' ? updates(conn) : updates),
-            }
-          : conn
-      )
-    );
-  };
-
-  const connectMqtt = async (id: string) => {
-    const connection = mqttConnections.find((conn) => conn.id === id);
-    if (!connection) return;
-
-    try {
-      updateMqttConnection(id, { status: 'connecting' });
-
-      // Update centralized MQTT service configuration
-      mqttService.updateConfig({
-        host: connection.host,
-        port: connection.port,
-        clientId: connection.clientId,
-        username: connection.username,
-        password: connection.password,
-      });
-
-      // Connect using centralized service
-      await mqttService.connect();
-
-      // Subscribe to the topic
-      mqttService.subscribe(connection.topic);
-
-      // Update connection status
-      updateMqttConnection(id, {
-        status: mqttService.getStatus(),
-        messages: [
-          ...connection.messages,
-          `Connected to ${connection.host}:${connection.port}`,
-        ],
-      });
-
-      showAlert('Success', 'MQTT Connected successfully', 'success');
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      updateMqttConnection(id, {
-        status: 'error',
-        messages: [...connection.messages, `Connection error: ${errorMessage}`],
-      });
-      showAlert('Error', `Failed to connect: ${errorMessage}`, 'error');
-    }
-  };
-
-  const disconnectMqtt = (id: string) => {
-    try {
-      // Disconnect centralized MQTT service
-      mqttService.disconnect();
-
-      updateMqttConnection(id, { status: 'disconnected' });
-      const connection = mqttConnections.find((conn) => conn.id === id);
-      if (connection) {
-        updateMqttConnection(id, {
-          messages: [...connection.messages, 'Disconnected from server'],
-        });
-      }
-      showAlert('Success', 'MQTT Disconnected successfully', 'success');
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      showAlert('Error', `Failed to disconnect: ${errorMsg}`, 'error');
-      console.error('MQTT Disconnection error:', error);
-    }
-  };
-
-  const sendMqttMessage = (id: string) => {
-    const connection = mqttConnections.find((conn) => conn.id === id);
-    if (!connection) {
-      showAlert('Error', 'Connection not found', 'error');
-      return;
-    }
-    if (!mqttService.isConnected()) {
-      showAlert('Error', 'MQTT not connected', 'error');
-      return;
-    }
-    if (!connection.message.trim() || !connection.topic.trim()) {
-      showAlert('Error', 'Message and topic cannot be empty', 'error');
-      return;
-    }
-    try {
-      // Send using centralized MQTT service
-      console.log('[MQTT SEND]', {
-        topic: connection.topic,
-        message: connection.message,
-      });
-
-      const success = mqttService.publish(connection.topic, connection.message);
-
-      if (success) {
-        // Log success
-        updateMqttConnection(id, (conn) => ({
-          messages: [
-            ...(conn.messages || []),
-            `[${connection.topic}] Sending: ${connection.message}`,
-            `[${connection.topic}] Sent successfully`,
-          ],
-          message: '',
-        }));
-      } else {
-        throw new Error('Failed to publish message');
-      }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      updateMqttConnection(id, (conn) => ({
-        messages: [
-          ...(conn.messages || []),
-          `Error sending control message: ${errorMessage}`,
-        ],
-      }));
-      showAlert('Error', `Failed to send message: ${errorMessage}`, 'error');
-    }
-  };
+  // Removed unused MQTT connection functions
 
   // Add cleanup on component unmount
   useEffect(() => {
@@ -818,21 +181,17 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        {/* Network Debugger - Temporary for testing */}
+        {/* <NetworkDebugger /> */}
+
         {/* Device Setup Section */}
         <SettingSection title="Device Setup">
           <SettingItem
             icon={<Wifi size={24} color="#2563eb" />}
             title="WiFi Configuration"
             subtitle="Configure WiFi for ESP32 devices"
-            onPress={() => router.push('/wifi-setup')}
-          />
-          <SettingItem
-            icon={<Bluetooth size={24} color="#2563eb" />}
-            title="Bluetooth Devices"
-            subtitle={`${connectedDevices.length} device${
-              connectedDevices.length !== 1 ? 's' : ''
-            } connected`}
-            onPress={() => {}}
+            onPress={() => router.push('/device-setup')}
+            // onPress={() => router.push('/wifi-setup')}
           />
         </SettingSection>
 
@@ -1015,106 +374,9 @@ export default function SettingsScreen() {
             )} */}
         {/* </SettingSection> */}
 
-        {/* MQTT Section */}
-        {/* <SettingSection title="MQTT Connection">
-          <View style={styles.mqttCard}>
-            <View style={styles.mqttHeader}>
-              <View style={styles.mqttStatus}>
-                <View
-                  style={[
-                    styles.statusIndicator,
-                    {
-                      backgroundColor:
-                        mqttStatus === 'connected'
-                          ? '#22c55e'
-                          : mqttStatus === 'connecting'
-                          ? '#eab308'
-                          : '#ef4444',
-                    },
-                  ]}
-                />
-                <Text style={styles.statusText}>
-                  {mqttStatus === 'connected'
-                    ? 'Connected'
-                    : mqttStatus === 'connecting'
-                    ? 'Connecting...'
-                    : 'Disconnected'}
-                </Text>
-              </View>
-              <View style={styles.headerButtons}>
-                {mqttConnected ? (
-                  <TouchableOpacity
-                    style={[styles.headerButton, styles.disconnectButton]}
-                    onPress={disconnectMQTT}
-                  >
-                    <PowerOff size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.headerButton,
-                      mqttStatus === 'connecting' && styles.scanningButton,
-                    ]}
-                    onPress={connectMQTT}
-                    disabled={mqttStatus === 'connecting'}
-                  >
-                    {mqttStatus === 'connecting' ? (
-                      <ActivityIndicator color="#2563eb" />
-                    ) : (
-                      <WifiIcon size={20} color="#2563eb" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            {mqttConnected && (
-              <View style={styles.mqttContent}>
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Topic:</Text>
-                  <TextInput
-                    style={styles.mqttInput}
-                    value={mqttTopic}
-                    onChangeText={setMqttTopic}
-                    placeholder="Enter topic"
-                    placeholderTextColor="#64748b"
-                  />
-                </View>
-
-                <View style={styles.mqttInputGroup}>
-                  <Text style={styles.mqttLabel}>Message:</Text>
-                  <TextInput
-                    style={[styles.mqttInput, styles.mqttMessageInput]}
-                    value={mqttMessage}
-                    onChangeText={setMqttMessage}
-                    placeholder="Enter message"
-                    placeholderTextColor="#64748b"
-                    multiline
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={styles.publishButton}
-                  onPress={publishMessage}
-                  disabled={!mqttMessage.trim()}
-                >
-                  <Send size={20} color="#ffffff" />
-                  <Text style={styles.publishButtonText}>Publish</Text>
-                </TouchableOpacity>
-
-                <View style={styles.messagesContainer}>
-                  <Text style={styles.messagesTitle}>Recent Messages:</Text>
-                  <ScrollView style={styles.messagesList}>
-                    {mqttMessages.map((msg, index) => (
-                      <Text key={index} style={styles.messageText}>
-                        {msg}
-                      </Text>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            )}
-          </View>
+        {/* MQTT Bridge Section */}
+        {/* <SettingSection title="MQTT Bridge">
+          <MQTTBridgeSection />
         </SettingSection> */}
 
         {/* Device Control Section */}
@@ -1397,7 +659,7 @@ export default function SettingsScreen() {
         </SettingSection> */}
 
         {/* Centralized MQTT Configuration Section */}
-        <SettingSection title="MQTT Configuration">
+        {/* <SettingSection title="MQTT Configuration">
           <View style={styles.tcpCard}>
             <View style={styles.tcpHeader}>
               <View style={styles.tcpStatus}>
@@ -1513,7 +775,7 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
-        </SettingSection>
+        </SettingSection> */}
 
         {/* MQTT Connection Test Section */}
         {/* <SettingSection title="MQTT Connection Test">
@@ -1881,117 +1143,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      {/* WiFi Config Modal */}
-      <Modal
-        visible={isModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setIsModalVisible(false);
-          Keyboard.dismiss();
-        }}
-        statusBarTranslucent
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleContainer}>
-                <WifiIcon
-                  size={24}
-                  color="#2563eb"
-                  style={styles.modalTitleIcon}
-                />
-                <Text style={styles.modalTitle}>WiFi Configuration</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setIsModalVisible(false);
-                  Keyboard.dismiss();
-                }}
-                style={styles.closeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={24} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>WiFi SSID</Text>
-                <View style={styles.inputContainer}>
-                  <WifiIcon
-                    size={20}
-                    color="#64748b"
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    value={wifiConfig.ssid}
-                    onChangeText={(text) =>
-                      setWifiConfig((prev) => ({ ...prev, ssid: text }))
-                    }
-                    placeholder="Enter WiFi name"
-                    placeholderTextColor="#64748b"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <Lock size={20} color="#64748b" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={wifiConfig.password}
-                    onChangeText={(text) =>
-                      setWifiConfig((prev) => ({ ...prev, password: text }))
-                    }
-                    placeholder="Enter WiFi password"
-                    placeholderTextColor="#64748b"
-                    secureTextEntry
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Port</Text>
-                <View style={styles.inputContainer}>
-                  <Globe size={20} color="#64748b" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={wifiConfig.port}
-                    onChangeText={(text) =>
-                      setWifiConfig((prev) => ({ ...prev, port: text }))
-                    }
-                    placeholder="Enter port number"
-                    placeholderTextColor="#64748b"
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  (isSending || !wifiConfig.ssid || !wifiConfig.password) &&
-                    styles.buttonDisabled,
-                ]}
-                onPress={sendWifiConfig}
-                disabled={isSending || !wifiConfig.ssid || !wifiConfig.password}
-              >
-                {isSending ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <>
-                    <Send size={20} color="#ffffff" style={styles.buttonIcon} />
-                    <Text style={styles.buttonText}>Send Configuration</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* WiFi Config Modal removed */}
 
       <CustomAlert
         visible={alert.visible}
@@ -2905,5 +2057,146 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // MQTT Bridge Styles
+  brokerInfo: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  brokerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  brokerLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+  },
+  brokerValue: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    fontWeight: '500',
+  },
+  testSection: {
+    marginTop: 16,
+  },
+  testTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  testButton: {
+    backgroundColor: '#2563eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  cloudTestButton: {
+    backgroundColor: '#059669',
+  },
+  testButtonActive: {
+    opacity: 0.7,
+  },
+  testButtonError: {
+    backgroundColor: '#dc2626',
+  },
+  testButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  infoSection: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  infoTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  infoText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+
+  // Bridge Test Styles
+  bridgeTestButton: {
+    backgroundColor: '#7c3aed',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  bridgeResults: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  bridgeResultsTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  bridgeResultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  bridgeResultLabel: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
+  bridgeResultValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bridgeErrors: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  bridgeErrorTitle: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  bridgeErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+
+  // Network Section Styles
+  networkSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  networkIndicator: {
+    marginTop: 8,
   },
 });

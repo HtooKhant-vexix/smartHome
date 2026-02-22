@@ -245,7 +245,7 @@ export class MqttClient {
           },
           userName: this.connection.username,
           password: this.connection.password,
-          useSSL: false,
+          useSSL: false, // TODO: Make this configurable based on broker settings
         };
 
         this.client.connect(options);
